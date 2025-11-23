@@ -1,23 +1,19 @@
 // /src/pages/ProjectDetail.jsx
 import React, { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
+import { Button, Segmented, Progress } from "antd";
+import { PlusOutlined, UnorderedListOutlined, AppstoreOutlined } from "@ant-design/icons";
 import ProjectService from "../api/project.service";
 // Import components
 import TaskCard from "../components/Task/TaskCard";
 import TaskModal from "../components/Task/TaskModal";
 import TaskListView from "../components/Project/TaskListView"; // <-- IMPORT MỚI
+import FilterBar from "../components/Project/FilterBar";
 import { useAuth } from "../context/AuthContext";
 
 // Icons
 import {
   FaUsersCog,
-  FaCalendarAlt,
-  FaUserTie,
-  FaSearch,
-  FaFilter,
-  FaPlus,
-  FaList,
-  FaColumns,
 } from "react-icons/fa";
 
 const ProjectDetail = () => {
@@ -31,7 +27,7 @@ const ProjectDetail = () => {
   // State lọc & View
   const [searchTerm, setSearchTerm] = useState("");
   const [filterAssignee, setFilterAssignee] = useState("all");
-  const [viewMode, setViewMode] = useState("board"); // "board" hoặc "list"
+  const [viewMode, setViewMode] = useState("list"); // "board" hoặc "list"
 
   // State Modal
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -81,8 +77,19 @@ const ProjectDetail = () => {
   const completedTasks = projectData.tasks.filter(
     (t) => t.status && t.status.position === maxPosition
   ).length;
-  const projectProgress =
-    totalTasks === 0 ? 0 : Math.round((completedTasks / totalTasks) * 100);
+
+  const TaskProgress = ({ completedTasks, totalTasks }) => {
+    const percent = totalTasks === 0 ? 0 : (completedTasks / totalTasks) * 100;
+
+    return (
+      <Progress
+        percent={percent}
+        format={(percent) => `${Math.round(percent)}%`}   // Chỉ hiện phần trăm
+        strokeWidth={10}
+        status={percent === 100 ? 'success' : 'active'}
+      />
+    );
+  };
 
   // Logic Lọc Task
   const filteredTasks = projectData.tasks.filter((task) => {
@@ -126,125 +133,40 @@ const ProjectDetail = () => {
 
       {/* META INFO */}
       <div className="project-meta-bar">
-        <div className="meta-item">
-          <FaUserTie style={{ color: "#007bff" }} />
-          <span style={{ fontWeight: 500 }}>
-            {projectData.leader ? projectData.leader.name : "No Leader"}
-          </span>
-        </div>
-        <div className="meta-item">
-          <FaCalendarAlt style={{ color: "#6c757d" }} />
-          <span>
-            {new Date(projectData.startDate).toLocaleDateString("vi-VN")}
-          </span>
-        </div>
-        <div className="project-progress-container">
-          <span style={{ fontSize: "12px", fontWeight: "bold", color: "#333" }}>
-            Tiến độ: {projectProgress}%
-          </span>
-          <div className="project-progress-track">
-            <div
-              className="project-progress-fill"
-              style={{ width: `${projectProgress}%` }}
-            ></div>
-          </div>
-          <span style={{ fontSize: "12px", color: "#666" }}>
-            ({completedTasks}/{totalTasks} tasks)
-          </span>
-        </div>
+        <h4>Progress</h4>
+        <TaskProgress completedTasks={completedTasks} totalTasks={totalTasks} />
       </div>
 
       {/* FILTER & ACTIONS BAR */}
       <div className="filter-bar">
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            position: "relative",
-          }}
-        >
-          <FaSearch
-            style={{ position: "absolute", left: "10px", color: "#aaa" }}
-          />
-          <input
-            type="text"
-            className="search-input"
-            placeholder="Tìm kiếm..."
-            style={{ paddingLeft: "30px" }}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
-
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-            flex: 1,
-          }}
-        >
-          <FaFilter style={{ color: "#666" }} />
-          <select
-            className="filter-select"
-            value={filterAssignee}
-            onChange={(e) => setFilterAssignee(e.target.value)}
-          >
-            <option value="all">Tất cả thành viên</option>
-            {projectData.members.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        <FilterBar searchTerm={searchTerm} setSearchTerm={setSearchTerm} filterAssignee={filterAssignee} setFilterAssignee={setFilterAssignee} projectData={projectData} />
 
         {/* --- VIEW SWITCHER (Nút chuyển Board/List) --- */}
         <div
           style={{
             display: "flex",
-            border: "1px solid #ddd",
-            borderRadius: "4px",
-            overflow: "hidden",
-            marginRight: "10px",
+            "flex-direction": "row-reverse",
           }}
         >
-          <button
-            onClick={() => setViewMode("board")}
-            style={{
-              padding: "6px 12px",
-              background: viewMode === "board" ? "#e3f2fd" : "white",
-              border: "none",
-              cursor: "pointer",
-              color: viewMode === "board" ? "#007bff" : "#666",
-              borderRight: "1px solid #ddd",
-            }}
-          >
-            <FaColumns /> Board
-          </button>
-          <button
-            onClick={() => setViewMode("list")}
-            style={{
-              padding: "6px 12px",
-              background: viewMode === "list" ? "#e3f2fd" : "white",
-              border: "none",
-              cursor: "pointer",
-              color: viewMode === "list" ? "#007bff" : "#666",
-            }}
-          >
-            <FaList /> List
-          </button>
+          <Segmented
+            value={viewMode}
+            onChange={setViewMode}
+            options={[
+              { label: "List", value: "list", icon: <UnorderedListOutlined /> },
+              { label: "Board", value: "board", icon: <AppstoreOutlined /> },
+            ]}
+          />
         </div>
-
-        <button className="btn btn-primary" onClick={openCreateTaskModal}>
-          <FaPlus style={{ marginRight: "5px" }} /> Tạo Task Mới
-        </button>
+        <Button type="primary" icon={<PlusOutlined />} onClick={openCreateTaskModal}>
+          Add New Task
+        </Button>
       </div>
 
       {/* MAIN CONTENT AREA (Chuyển đổi giữa Kanban và List) */}
-      <div style={{ flex: 1, overflow: "hidden", marginTop: "10px" }}>
-        {viewMode === "board" ? (
-          // 1. KANBAN VIEW
+      <div style={{ marginTop: 20 }}>
+        {viewMode === "list" ? (
+          <TaskListView tasks={filteredTasks} onTaskClick={openEditTaskModal} />
+        ) : (
           <div className="kanban-board-container">
             {projectData.statuses.map((status) => {
               const columnTasks = filteredTasks.filter(
@@ -278,9 +200,6 @@ const ProjectDetail = () => {
               );
             })}
           </div>
-        ) : (
-          // 2. LIST VIEW (TABLE)
-          <TaskListView tasks={filteredTasks} onTaskClick={openEditTaskModal} />
         )}
       </div>
 
