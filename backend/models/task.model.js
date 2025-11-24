@@ -8,17 +8,15 @@ module.exports = (sequelize, Sequelize) => {
 			defaultValue: 'Minor',
 		},
 		rootCause: { type: Sequelize.TEXT },
-		requiredSkills: { type: Sequelize.TEXT }, // Mới
+		requiredSkills: { type: Sequelize.TEXT },
 		score: { type: Sequelize.FLOAT },
 
-		// Các trường Tracking mới
 		startDate: { type: Sequelize.DATE, defaultValue: Sequelize.NOW },
 		dueDate: { type: Sequelize.DATE },
 		progress: { type: Sequelize.FLOAT, defaultValue: 0 },
 		isOverdue: { type: Sequelize.BOOLEAN, defaultValue: false },
 		resolvedAt: { type: Sequelize.DATE },
 
-		// FK sẽ được map trong index.js
 		projectId: { type: Sequelize.INTEGER },
 		reporterId: { type: Sequelize.INTEGER },
 		assigneeId: { type: Sequelize.INTEGER },

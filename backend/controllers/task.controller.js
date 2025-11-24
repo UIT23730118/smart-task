@@ -106,8 +106,12 @@ exports.getTaskDetails = async (req, res) => {
         // Lấy Comments và thông tin người comment
         {
           model: Comment,
-          include: [{ model: User, attributes: ["id", "name"] }], // User comment
-          order: [["createdAt", "ASC"]], // Xếp theo thời gian
+          as: "comments",                     // DÙNG ALIAS
+          include: [
+            { model: User, as: "author", attributes: ["id", "name"] }
+          ],
+          separate: true,                     // Giúp order hoạt động
+          order: [["createdAt", "ASC"]],
         },
         // Lấy Attachments và người upload
         {

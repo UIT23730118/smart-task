@@ -79,4 +79,20 @@ db.overdueAlerts.belongsTo(db.tasks, { foreignKey: 'taskId' });
 db.users.hasMany(db.userPerformance, { foreignKey: 'userId' });
 db.userPerformance.belongsTo(db.users, { foreignKey: 'userId' });
 
+// 7. Comments
+db.tasks.hasMany(db.comments, {
+  foreignKey: 'taskId',
+  as: 'comments',
+  onDelete: 'CASCADE'
+});
+
+db.comments.belongsTo(db.tasks, {
+  foreignKey: 'taskId',
+  as: 'task'
+});
+
+// để load user comment
+db.users.hasMany(db.comments, { foreignKey: 'userId', as: 'userComments' });
+db.comments.belongsTo(db.users, { foreignKey: 'userId', as: 'author' });
+
 module.exports = db;

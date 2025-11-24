@@ -1353,7 +1353,7 @@ textarea.form-control {
   padding: 2rem;
   border-radius: 8px;
   width: 90%;
-  max-width: 600px;
+  /* max-width: 800px; */
   box-shadow: var(--shadow-md);
   animation: slideIn 0.3s ease-out;
 }

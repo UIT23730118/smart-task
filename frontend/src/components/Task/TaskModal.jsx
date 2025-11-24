@@ -1,7 +1,20 @@
 // /src/components/Task/TaskModal.jsx
 import React, { useState, useEffect } from "react";
+import { 
+  Modal, Form, Input, Select, DatePicker, Slider, 
+  Button, Row, Col, Avatar, List, message, Tag, Divider 
+} from "antd";
+import { 
+  UserOutlined, SendOutlined, 
+  CheckCircleOutlined 
+} from "@ant-design/icons";
+import dayjs from "dayjs"; 
+
 import TaskService from "../../api/task.service";
-import { useAuth } from "../../context/AuthContext"; // Để lấy user hiện tại cho comment
+import { useAuth } from "../../context/AuthContext";
+
+const { TextArea } = Input;
+const { Option } = Select;
 
 const TaskModal = ({
   taskId,
@@ -12,28 +25,25 @@ const TaskModal = ({
   onTaskChanged,
 }) => {
   const { user } = useAuth();
-  const isEditMode = taskId != null;
+  const isEditMode = !!taskId;
 
-  // State cho Task Data
+  // --- STATE ---
   const [formData, setFormData] = useState({
     title: "",
     description: "",
-    assigneeId: "",
-    statusId: "",
+    assigneeId: undefined,
+    statusId: undefined,
     priority: "Minor",
-    startDate: "",
-    dueDate: "",
+    startDate: null,
+    dueDate: null,
     progress: 0,
   });
 
-  // State cho Comments
   const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState("");
-  const [commentLoading, setCommentLoading] = useState(false);
-
-  // State UI
+  
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [commentLoading, setCommentLoading] = useState(false);
 
   // --- LOAD DATA ---
   useEffect(() => {
@@ -42,59 +52,65 @@ const TaskModal = ({
       TaskService.getTaskDetails(taskId)
         .then((res) => {
           const t = res.data;
-          const formatDate = (d) =>
-            d ? new Date(d).toISOString().split("T")[0] : "";
-
           setFormData({
             title: t.title,
             description: t.description || "",
-            assigneeId: t.assigneeId || "",
+            assigneeId: t.assigneeId || undefined,
             priority: t.priority || "Minor",
-            statusId: t.statusId || (statuses.length > 0 ? statuses[0].id : ""),
-            startDate: formatDate(t.startDate),
-            dueDate: formatDate(t.dueDate),
+            statusId: t.statusId || (statuses.length > 0 ? statuses[0].id : undefined),
+            startDate: t.startDate ? dayjs(t.startDate) : null,
+            dueDate: t.dueDate ? dayjs(t.dueDate) : null,
             progress: t.progress || 0,
           });
-
-          // Load comments
           setComments(t.comments || []);
         })
         .catch((err) => {
-          console.error(err);
-          setError(
-            "Lỗi tải task: " + (err.response?.data?.message || err.message)
-          );
+          message.error("Error loading task: " + (err.response?.data?.message || err.message));
         })
         .finally(() => setLoading(false));
     } else {
-      // Mode Tạo mới: Set default
+      // Create Mode
       if (statuses.length > 0) {
         setFormData((prev) => ({ ...prev, statusId: statuses[0].id }));
       }
     }
-  }, [taskId, isEditMode, statuses]); // Thêm statuses vào dependency
+  }, [taskId, isEditMode, statuses]);
 
   // --- HANDLERS ---
-  const handleChange = (e) =>
-    setFormData({ ...formData, [e.target.name]: e.target.value });
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const updateField = (field, value) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleInputChange = (e) => {
+    updateField(e.target.name, e.target.value);
+  };
+
+  const handleSubmit = async () => {
+    // Basic Validation
+    if (!formData.title.trim()) {
+      message.error("Please enter the task title");
+      return;
+    }
+
     setLoading(true);
-    setError("");
     try {
-      const payload = { ...formData, projectId };
-      // Convert empty string assignee to null
-      if (payload.assigneeId === "") payload.assigneeId = null;
+      const payload = {
+        ...formData,
+        projectId,
+        startDate: formData.startDate ? formData.startDate.format("YYYY-MM-DD") : null,
+        dueDate: formData.dueDate ? formData.dueDate.format("YYYY-MM-DD") : null,
+        assigneeId: formData.assigneeId || null,
+      };
 
       if (isEditMode) await TaskService.updateTask(taskId, payload);
       else await TaskService.createTask(payload);
 
-      onTaskChanged(); // Refresh board
-      // Không đóng modal ngay để user thấy kết quả, hoặc đóng luôn tùy bạn
+      message.success(isEditMode ? "Task updated successfully!" : "Task created successfully!");
+      onTaskChanged();
       onClose();
     } catch (err) {
-      setError(err.response?.data?.message || err.message);
+      message.error(err.response?.data?.message || err.message);
     } finally {
       setLoading(false);
     }
@@ -105,283 +121,218 @@ const TaskModal = ({
     setCommentLoading(true);
     try {
       const res = await TaskService.addComment(taskId, newComment);
-      // Thêm comment mới vào list hiện tại (giả lập để không cần gọi lại API load task)
       const addedComment = {
         ...res.data,
-        user: { name: user.name, id: user.id }, // Giả lập user info để hiện ngay
+        user: { name: user.name, id: user.id },
+        createdAt: new Date().toISOString(),
       };
       setComments([...comments, addedComment]);
       setNewComment("");
     } catch (err) {
-      alert("Lỗi gửi comment: " + err.message);
+      message.error("Error sending comment: " + err.message);
     } finally {
       setCommentLoading(false);
     }
   };
 
-  // Nếu statuses chưa load kịp
-  const safeStatuses = statuses || [];
+  const getPriorityColor = (p) => {
+    switch (p) {
+      case "Blocker": return "red";
+      case "Critical": return "orange";
+      case "Major": return "blue";
+      default: return "green";
+    }
+  };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className="modal-header">
-          <h2>{isEditMode ? `Task #${taskId}` : "Tạo Task Mới"}</h2>
-          <button className="modal-close-btn" onClick={onClose}>
-            &times;
-          </button>
+    <Modal
+      title={
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {isEditMode ? <CheckCircleOutlined style={{ color: '#1890ff' }} /> : null}
+          <span style={{ fontSize: '1.2rem' }}>
+            {isEditMode ? `Task #${taskId}` : "Create New Task"}
+          </span>
         </div>
-
-        {/* Error Alert */}
-        {error && (
-          <div className="alert alert-danger" style={{ margin: "0 20px 10px" }}>
-            {error}
-          </div>
-        )}
-
-        <div className="modal-body">
-          {/* LEFT COLUMN: Main Info & Comments */}
-          <div className="modal-main">
-            {/* Form Chính */}
-            <div className="form-group">
-              <label className="form-label">
-                Tiêu đề <span className="text-danger">*</span>
-              </label>
-              <input
-                type="text"
-                className="form-control"
+      }
+      open={true}
+      onCancel={onClose}
+      onOk={handleSubmit}
+      confirmLoading={loading}
+      width="90%"
+      style={{ top: 20 }}
+      okText="Save"
+      cancelText="Cancel"
+      maskClosable={false}
+    >
+      <Row gutter={[24, 24]}>
+        {/* --- LEFT COLUMN: MAIN INFO --- */}
+        <Col xs={24} md={16}>
+          <Form layout="vertical">
+            <Form.Item label={<b>Title</b>} required>
+              <Input
+                size="large"
                 name="title"
+                placeholder="Enter task title..."
                 value={formData.title}
-                onChange={handleChange}
-                required
-                autoFocus
+                onChange={handleInputChange}
               />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Mô tả</label>
-              <textarea
-                className="form-control"
-                rows="5"
+            </Form.Item>
+
+            <Form.Item label={<b>Description</b>}>
+              <TextArea
+                rows={6}
                 name="description"
+                placeholder="Detailed description..."
                 value={formData.description}
-                onChange={handleChange}
+                onChange={handleInputChange}
               />
-            </div>
+            </Form.Item>
+          </Form>
 
-            {/* Khu vực Comment (Chỉ hiện khi Edit mode) */}
-            {isEditMode && (
-              <div
-                style={{
-                  marginTop: "30px",
-                  borderTop: "1px solid #eee",
-                  paddingTop: "20px",
-                }}
-              >
-                <h4 style={{ fontSize: "16px", margin: "0 0 15px 0" }}>
-                  Bình luận
-                </h4>
-
-                {/* Danh sách Comment */}
-                <div
-                  style={{
-                    maxHeight: "200px",
-                    overflowY: "auto",
-                    marginBottom: "15px",
-                  }}
-                >
-                  {comments.length === 0 && (
-                    <p className="text-muted" style={{ fontSize: "13px" }}>
-                      Chưa có bình luận nào.
-                    </p>
+          {/* --- COMMENTS SECTION (Only Edit Mode) --- */}
+          {isEditMode && (
+            <div style={{ marginTop: 30 }}>
+              <Divider orientation="left">Comments</Divider>
+              
+              <div style={{ maxHeight: '300px', overflowY: 'auto', paddingRight: '10px' }}>
+                <List
+                  itemLayout="horizontal"
+                  dataSource={comments}
+                  locale={{ emptyText: "No comments yet." }}
+                  renderItem={(item) => (
+                    <List.Item>
+                      <List.Item.Meta
+                        avatar={
+                          <Avatar style={{ backgroundColor: '#87d068' }}>
+                            {item.user?.name?.charAt(0)?.toUpperCase() || <UserOutlined />}
+                          </Avatar>
+                        }
+                        title={
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span style={{ fontWeight: 'bold' }}>{item.user?.name || "Unknown User"}</span>
+                            <span style={{ fontSize: '12px', color: '#999' }}>
+                              {dayjs(item.createdAt).format("MMM D, YYYY HH:mm")}
+                            </span>
+                          </div>
+                        }
+                        description={
+                          <div style={{ 
+                            backgroundColor: '#f5f5f5', 
+                            padding: '8px 12px', 
+                            borderRadius: '8px',
+                            marginTop: '4px',
+                            color: '#333'
+                          }}>
+                            {item.message}
+                          </div>
+                        }
+                      />
+                    </List.Item>
                   )}
-                  {comments.map((c) => (
-                    <div
-                      key={c.id}
-                      style={{
-                        marginBottom: "10px",
-                        display: "flex",
-                        gap: "10px",
-                      }}
-                    >
-                      <div
-                        className="member-avatar"
-                        style={{
-                          width: "30px",
-                          height: "30px",
-                          fontSize: "12px",
-                        }}
-                      >
-                        {c.user?.name?.charAt(0).toUpperCase() || "?"}
-                      </div>
-                      <div
-                        style={{
-                          background: "#f4f5f7",
-                          padding: "8px 12px",
-                          borderRadius: "8px",
-                          flex: 1,
-                        }}
-                      >
-                        <div
-                          style={{
-                            fontWeight: "bold",
-                            fontSize: "12px",
-                            marginBottom: "2px",
-                          }}
-                        >
-                          {c.user?.name || "Unknown"}
-                          <span
-                            style={{
-                              fontWeight: "normal",
-                              color: "#888",
-                              marginLeft: "10px",
-                              fontSize: "11px",
-                            }}
-                          >
-                            {new Date(c.createdAt).toLocaleString("vi-VN")}
-                          </span>
-                        </div>
-                        <div style={{ fontSize: "14px" }}>{c.message}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Input Comment */}
-                <div style={{ display: "flex", gap: "10px" }}>
-                  <input
-                    type="text"
-                    className="form-control"
-                    placeholder="Viết bình luận..."
-                    value={newComment}
-                    onChange={(e) => setNewComment(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleAddComment()}
-                  />
-                  <button
-                    className="btn btn-secondary"
-                    onClick={handleAddComment}
-                    disabled={commentLoading}
-                  >
-                    {commentLoading ? "..." : "Gửi"}
-                  </button>
-                </div>
+                />
               </div>
-            )}
-          </div>
 
-          {/* RIGHT COLUMN: Meta Data */}
-          <div className="modal-sidebar">
-            <div className="form-group">
-              <label className="form-label">Trạng thái</label>
-              <select
-                className="form-control"
-                name="statusId"
+              <div style={{ display: 'flex', gap: 10, marginTop: 15 }}>
+                <Input 
+                  placeholder="Write a comment..." 
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  onPressEnter={handleAddComment}
+                />
+                <Button 
+                  type="primary" 
+                  icon={<SendOutlined />} 
+                  onClick={handleAddComment}
+                  loading={commentLoading}
+                >
+                  Send
+                </Button>
+              </div>
+            </div>
+          )}
+        </Col>
+
+        {/* --- RIGHT COLUMN: METADATA --- */}
+        <Col xs={24} md={8} style={{ borderLeft: '1px solid #f0f0f0', paddingLeft: '24px' }}>
+          <Form layout="vertical">
+            
+            <Form.Item label="Status">
+              <Select
                 value={formData.statusId}
-                onChange={handleChange}
+                onChange={(val) => updateField("statusId", val)}
+                placeholder="Select status"
               >
-                {safeStatuses.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
+                {statuses?.map((s) => (
+                  <Option key={s.id} value={s.id}>{s.name}</Option>
                 ))}
-              </select>
-            </div>
+              </Select>
+            </Form.Item>
 
-            <div className="form-group">
-              <label className="form-label">Người thực hiện</label>
-              <select
-                className="form-control"
-                name="assigneeId"
+            <Form.Item label="Assignee">
+              <Select
                 value={formData.assigneeId}
-                onChange={handleChange}
+                onChange={(val) => updateField("assigneeId", val)}
+                placeholder="-- Unassigned --"
+                allowClear
               >
-                <option value="">-- Chưa chỉ định --</option>
-                {members.map((m) => (
-                  <option key={m.id} value={m.id}>
+                {members?.map((m) => (
+                  <Option key={m.id} value={m.id}>
+                    <Avatar size="small" style={{ marginRight: 8, backgroundColor: '#1890ff' }}>
+                      {m.name?.charAt(0)}
+                    </Avatar>
                     {m.name}
-                  </option>
+                  </Option>
                 ))}
-              </select>
-            </div>
+              </Select>
+            </Form.Item>
 
-            <div className="form-group">
-              <label className="form-label">Độ ưu tiên</label>
-              <select
-                className="form-control"
-                name="priority"
+            <Form.Item label="Priority">
+              <Select
                 value={formData.priority}
-                onChange={handleChange}
+                onChange={(val) => updateField("priority", val)}
               >
-                <option value="Minor">Minor (Thấp)</option>
-                <option value="Major">Major (Vừa)</option>
-                <option value="Critical">Critical (Cao)</option>
-                <option value="Blocker">Blocker (Khẩn cấp)</option>
-              </select>
-            </div>
+                {["Minor", "Major", "Critical", "Blocker"].map(p => (
+                  <Option key={p} value={p}>
+                    <Tag color={getPriorityColor(p)}>{p}</Tag>
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
 
-            <hr
-              className="my-4"
-              style={{ border: 0, borderTop: "1px solid #ddd" }}
-            />
+            <Divider />
 
-            <div className="form-group">
-              <label className="form-label">Ngày bắt đầu</label>
-              <input
-                type="date"
-                className="form-control"
-                name="startDate"
+            <Form.Item label="Start Date">
+              <DatePicker 
+                style={{ width: '100%' }}
+                format="YYYY-MM-DD"
                 value={formData.startDate}
-                onChange={handleChange}
+                onChange={(date) => updateField("startDate", date)}
+                placeholder="Select date"
               />
-            </div>
+            </Form.Item>
 
-            <div className="form-group">
-              <label className="form-label">Hạn chót (Deadline)</label>
-              <input
-                type="date"
-                className="form-control"
-                name="dueDate"
+            <Form.Item label="Due Date">
+              <DatePicker 
+                style={{ width: '100%' }}
+                format="YYYY-MM-DD"
                 value={formData.dueDate}
-                onChange={handleChange}
+                onChange={(date) => updateField("dueDate", date)}
+                placeholder="Select date"
               />
-            </div>
+            </Form.Item>
 
-            <div className="form-group">
-              <label className="form-label d-flex justify-between">
-                <span>Tiến độ</span>
-                <span className="text-primary font-bold">
-                  {formData.progress}%
-                </span>
-              </label>
-              <input
-                type="range"
-                className="w-100"
-                name="progress"
-                min="0"
-                max="100"
+            <Form.Item label={`Progress: ${formData.progress}%`}>
+              <Slider
+                min={0}
+                max={100}
                 value={formData.progress}
-                onChange={handleChange}
+                onChange={(val) => updateField("progress", val)}
               />
-            </div>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="modal-footer">
-          <button type="button" className="btn btn-secondary" onClick={onClose}>
-            Hủy
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={handleSubmit}
-            disabled={loading}
-          >
-            {loading ? "Đang lưu..." : "Lưu lại"}
-          </button>
-        </div>
-      </div>
-    </div>
+            </Form.Item>
+          </Form>
+        </Col>
+      </Row>
+    </Modal>
   );
 };
 

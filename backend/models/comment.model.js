@@ -10,6 +10,10 @@ module.exports = (sequelize, Sequelize) => {
         userId: {
             type: Sequelize.INTEGER
         }
+    }, {
+        timestamps: true,
+        updatedAt: false     // Báo rằng chúng ta KHÔNG dùng cột 'updatedAt'
+        // --- KẾT THÚC PHẦN THÊM ---
     });
 
     return Comment;

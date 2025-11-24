@@ -2,119 +2,238 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import DashboardService from '../api/dashboard.service';
-import { FaTasks, FaSpinner, FaExclamationCircle, FaChartBar } from 'react-icons/fa';
 
-// Import thư viện Gantt
+// Ant Design & Icons
+import { Typography, Row, Col, Card, Statistic, Spin, Empty, Segmented } from 'antd';
+import {
+    CheckCircleOutlined, SyncOutlined, WarningOutlined,
+    ProjectOutlined, BarChartOutlined, PieChartOutlined
+} from '@ant-design/icons';
+
+// Recharts
+import {
+    PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis,
+    CartesianGrid, Tooltip, Legend, ResponsiveContainer
+} from 'recharts';
+
+// Gantt
 import { Gantt, ViewMode } from 'gantt-task-react';
 import 'gantt-task-react/dist/index.css';
 
+const { Title, Text } = Typography;
+const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
+
 const Dashboard = () => {
-	const { user } = useAuth();
-	const [stats, setStats] = useState({ totalTasks: 0, inProgressTasks: 0, overdueTasks: 0 });
-	const [ganttTasks, setGanttTasks] = useState([]);
-	const [loading, setLoading] = useState(true);
+    const { user } = useAuth();
+    const [stats, setStats] = useState({ totalTasks: 0, inProgressTasks: 0, overdueTasks: 0 });
+    const [ganttTasks, setGanttTasks] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [ganttView, setGanttView] = useState(ViewMode.Day);
 
-	useEffect(() => {
-		const loadData = async () => {
-			setLoading(true);
-			try {
-				const statsRes = await DashboardService.getDashboardStats();
-				setStats(statsRes.data);
+    // Chart data
+    const [projectChartData, setProjectChartData] = useState([]);
+    const [statusChartData, setStatusChartData] = useState([]);
 
-				const ganttRes = await DashboardService.getGanttTasks();
-				// Chuyển đổi chuỗi ngày thành Date object (API trả về string JSON)
-				const formattedTasks = ganttRes.data.map((t) => ({
-					...t,
-					start: new Date(t.start),
-					end: new Date(t.end),
-				}));
-				setGanttTasks(formattedTasks);
-			} catch (err) {
-				console.error(err);
-			} finally {
-				setLoading(false);
-			}
-		};
-		loadData();
-	}, []);
+    useEffect(() => {
+        const loadData = async () => {
+            setLoading(true);
+            try {
+                // Fetch actual dashboard data
+                const [statsRes, ganttRes] = await Promise.all([
+                    DashboardService.getDashboardStats(),
+                    DashboardService.getGanttTasks()
+                ]);
 
-	return (
-		<>
-			<div className="page-header">
-				<h1>Dashboard</h1>
-				<p>Welcome back, {user.name}! Overview of your work.</p>
-			</div>
+                setStats(statsRes.data);
 
-			{/* 1. Stats Grid */}
-			<div className="dashboard-stats-grid">
-				<div className="stat-card">
-					<div className="icon-wrapper" style={{ color: '#007bff' }}>
-						<FaTasks />
-					</div>
-					<div>
-						<div className="stat-value">{stats.totalTasks}</div>
-						<div className="stat-label">Total Tasks</div>
-					</div>
-				</div>
-				<div className="stat-card">
-					<div className="icon-wrapper" style={{ color: '#ffc107' }}>
-						<FaSpinner />
-					</div>
-					<div>
-						<div className="stat-value">{stats.inProgressTasks}</div>
-						<div className="stat-label">In Progress</div>
-					</div>
-				</div>
-				<div className="stat-card">
-					<div className="icon-wrapper" style={{ color: '#dc3545' }}>
-						<FaExclamationCircle />
-					</div>
-					<div>
-						<div className="stat-value">{stats.overdueTasks}</div>
-						<div className="stat-label">Overdue</div>
-					</div>
-				</div>
-			</div>
+                const rawTasks = ganttRes.data;
+                if (rawTasks && rawTasks.length > 0) {
+                    // 1. Format dates for Gantt chart
+                    const formattedGantt = rawTasks.map(t => ({
+                        ...t,
+                        start: new Date(t.start),
+                        end: new Date(t.end),
+                    }));
+                    setGanttTasks(formattedGantt);
 
-			{/* 2. Gantt Chart Section */}
-			<div
-				style={{
-					marginTop: '30px',
-					background: 'white',
-					padding: '20px',
-					borderRadius: '8px',
-					boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-				}}
-			>
-				<div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
-					<FaChartBar size={20} color="#007bff" />
-					<h3 style={{ margin: 0 }}>Work Timeline (Gantt Chart)</h3>
-				</div>
+                    // 2. Process chart data from task list
+                    processCharts(formattedGantt, statsRes.data);
+                } else {
+                    // No tasks available
+                    setGanttTasks([]);
+                    setProjectChartData([]);
+                    setStatusChartData([]);
+                }
 
-				{loading ? (
-					<p>Loading chart...</p>
-				) : ganttTasks.length > 0 ? (
-					<div style={{ overflowX: 'auto' }}>
-						<Gantt
-							tasks={ganttTasks}
-							viewMode={ViewMode.Day} // Xem theo ngày
-							columnWidth={60}
-							listCellWidth="155px"
-							barBackgroundColor="#007bff"
-							barProgressColor="#0056b3"
-							labelColor="#333"
-							fontSize="12px"
-							barFill={60}
-						/>
-					</div>
-				) : (
-					<div style={{ textAlign: 'center', padding: '30px', color: '#666' }}>
-						<p>Chưa có task nào để hiển thị biểu đồ.</p>
-					</div>
-				)}
-			</div>
-		</>
-	);
+            } catch (err) {
+                console.error("Dashboard Error:", err);
+            } finally {
+                setLoading(false);
+            }
+        };
+        loadData();
+    }, []);
+
+    // Function to process chart data
+    const processCharts = (tasks, statistics) => {
+        // --- Pie Chart (Status) ---
+        // Group tasks by Status Name
+        const statusCount = {};
+        tasks.forEach(t => {
+            const sName = t.status || 'Unknown';
+            statusCount[sName] = (statusCount[sName] || 0) + 1;
+        });
+
+        const pieData = Object.keys(statusCount).map(key => ({
+            name: key,
+            value: statusCount[key]
+        }));
+        setStatusChartData(pieData);
+
+        // --- Bar Chart (Project) ---
+        // Group tasks by Project Name
+        const projCount = {};
+        tasks.forEach(t => {
+            const pName = t.project || 'No Project';
+            projCount[pName] = (projCount[pName] || 0) + 1;
+        });
+
+        const barData = Object.keys(projCount).map(k => ({
+            name: k,
+            tasks: projCount[k]
+        }));
+        setProjectChartData(barData);
+    };
+
+    if (loading) return (
+        <div style={{ height: '80vh', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+            <Spin size="large" tip="Loading data..." />
+        </div>
+    );
+
+    return (
+        <div style={{ padding: '0 20px 40px 20px' }}>
+
+            {/* Header */}
+            <div style={{ marginBottom: '24px' }}>
+                <Title level={2} style={{ marginBottom: 0 }}>Overview</Title>
+                <Text type="secondary">Hello, {user.name}! Here is the real data from the system.</Text>
+            </div>
+
+            {/* 1. Statistics Cards */}
+            <Row gutter={[16, 16]}>
+                <Col xs={24} sm={8}>
+                    <Card bordered={false} className="shadow-sm" hoverable>
+                        <Statistic
+                            title="Total Tasks" value={stats.totalTasks}
+                            prefix={<ProjectOutlined />} valueStyle={{ color: '#1890ff' }}
+                        />
+                    </Card>
+                </Col>
+                <Col xs={24} sm={8}>
+                    <Card bordered={false} className="shadow-sm" hoverable>
+                        <Statistic
+                            title="In Progress" value={stats.inProgressTasks}
+                            prefix={<SyncOutlined spin />} valueStyle={{ color: '#faad14' }}
+                        />
+                    </Card>
+                </Col>
+                <Col xs={24} sm={8}>
+                    <Card bordered={false} className="shadow-sm" hoverable>
+                        <Statistic
+                            title="Overdue" value={stats.overdueTasks}
+                            prefix={<WarningOutlined />} valueStyle={{ color: '#ff4d4f' }}
+                        />
+                    </Card>
+                </Col>
+            </Row>
+
+            {/* 2. Charts Area (Only show if data exists) */}
+            {ganttTasks.length > 0 ? (
+                <>
+                    <Row gutter={[16, 16]} style={{ marginTop: '24px' }}>
+                        {/* Bar Chart */}
+                        <Col xs={24} lg={16}>
+                            <Card title={<span><BarChartOutlined /> Tasks by Project</span>} bordered={false}>
+                                <ResponsiveContainer width="100%" height={300}>
+                                    <BarChart data={projectChartData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
+                                        <CartesianGrid strokeDasharray="3 3" />
+                                        <XAxis dataKey="name" />
+                                        <YAxis allowDecimals={false} />
+                                        <Tooltip />
+                                        <Legend />
+                                        <Bar dataKey="tasks" name="Number of Tasks" fill="#8884d8">
+                                            {projectChartData.map((entry, index) => (
+                                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                            ))}
+                                        </Bar>
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </Card>
+                        </Col>
+
+                        {/* Pie Chart */}
+                        <Col xs={24} lg={8}>
+                            <Card title={<span><PieChartOutlined /> Status Distribution</span>} bordered={false}>
+                                <ResponsiveContainer width="100%" height={300}>
+                                    <PieChart>
+                                        <Pie
+                                            data={statusChartData} cx="50%" cy="50%"
+                                            innerRadius={60} outerRadius={80}
+                                            paddingAngle={5} dataKey="value" label
+                                        >
+                                            {statusChartData.map((entry, index) => (
+                                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                            ))}
+                                        </Pie>
+                                        <Tooltip />
+                                        <Legend layout="vertical" verticalAlign="middle" align="right" />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            </Card>
+                        </Col>
+                    </Row>
+
+                    {/* 3. Gantt Chart */}
+                    <Card
+                        style={{ marginTop: '24px' }}
+                        title="Gantt Chart (Progress)"
+                        bordered={false}
+                        extra={
+                            <Segmented
+                                options={[
+                                    { label: 'Day', value: ViewMode.Day },
+                                    { label: 'Week', value: ViewMode.Week },
+                                    { label: 'Month', value: ViewMode.Month }
+                                ]}
+                                value={ganttView}
+                                onChange={setGanttView}
+                            />
+                        }
+                    >
+                        <div style={{ overflowX: 'auto' }}>
+                            <Gantt
+                                tasks={ganttTasks}
+                                viewMode={ganttView}
+                                columnWidth={ganttView === ViewMode.Month ? 300 : 65}
+                                listCellWidth="180px"
+                                barBackgroundColor="#1890ff"
+                                barProgressColor="#096dd9"
+                                labelColor="#333"
+                                fontSize="12px"
+                                barFill={60}
+                            />
+                        </div>
+                    </Card>
+                </>
+            ) : (
+                <Empty
+                    description="No tasks available. Create a new project and tasks to see the report."
+                    style={{ marginTop: '50px' }}
+                />
+            )}
+        </div>
+    );
 };
 
 export default Dashboard;

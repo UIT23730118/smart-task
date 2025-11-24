@@ -2,69 +2,64 @@
 const db = require('../models');
 const { Op } = require('sequelize');
 const Task = db.tasks;
+const Project = db.projects;
 const Status = db.statuses;
-const User = db.users;
 
+// API 1: Lấy số liệu thống kê (Stats)
 exports.getStats = async (req, res) => {
     try {
-        const userId = req.userId; // Lấy từ authJwt
+        const userId = req.userId;
 
-        // 1. Đếm tổng số task được gán cho user
+        // 1. Tổng số task của user
         const totalTasks = await Task.count({
             where: { assigneeId: userId }
         });
 
-        // 2. Đếm task "In Progress"
-        // (Chúng ta giả định status "In Progress" có tên là 'In Progress')
+        // 2. Task đang làm (Status khác 'Done', 'Closed', 'Resolved')
+        // Chúng ta sẽ lọc dựa trên tên status
         const inProgressTasks = await Task.count({
-            where: {
-                assigneeId: userId
-            },
+            where: { assigneeId: userId },
             include: [{
                 model: Status,
-                where: { name: 'In Progress' },
-                attributes: [] // Không cần lấy data từ status
+                where: {
+                    name: { [Op.notIn]: ['Done', 'Closed', 'Resolved'] } // Đếm những cái CHƯA xong
+                }
             }]
         });
 
-        // 3. Đếm task "Overdue" (Trễ hạn) (Chức năng 2)
-        // (Là các task chưa 'Closed'/'Resolved' VÀ dueDate < hôm nay)
+        // 3. Task quá hạn (Dùng trường isOverdue bạn đã thêm vào DB)
+        // Hoặc tính toán thủ công: dueDate < NOW và chưa xong
         const overdueTasks = await Task.count({
             where: {
                 assigneeId: userId,
-                dueDate: {
-                    [Op.lt]: new Date() // dueDate < (less than) thời điểm hiện tại
-                }
-            },
-            include: [{
-                model: Status,
-                // Loại trừ các task đã hoàn thành
-                where: {
-                    name: {
-                        [Op.notIn]: ['Closed', 'Resolved']
+                [Op.or]: [
+                    { isOverdue: true }, // Dùng cột có sẵn trong DB
+                    {
+                        dueDate: { [Op.lt]: new Date() }, // Hoặc tự tính: Hạn chót < Hôm nay
+                        progress: { [Op.lt]: 100 }        // Và chưa xong (progress < 100)
                     }
-                },
-                attributes: []
-            }]
+                ]
+            }
         });
 
         res.status(200).send({
-            totalTasks: totalTasks,
-            inProgressTasks: inProgressTasks,
-            overdueTasks: overdueTasks
+            totalTasks,
+            inProgressTasks,
+            overdueTasks
         });
 
     } catch (error) {
-        res.status(500).send({ message: `Error getting stats: ${error.message}` });
+        console.error("Stats Error:", error);
+        res.status(500).send({ message: error.message });
     }
 };
 
-// --- HÀM MỚI: Lấy dữ liệu cho Gantt Chart ---
+// API 2: Lấy dữ liệu cho Gantt Chart & Biểu đồ
 exports.getGanttTasks = async (req, res) => {
     try {
         const userId = req.userId;
 
-        // Lấy tất cả task mà user này liên quan (Assignee hoặc Reporter)
+        // Lấy task user được giao HOẶC user tạo
         const tasks = await Task.findAll({
             where: {
                 [Op.or]: [
@@ -72,41 +67,47 @@ exports.getGanttTasks = async (req, res) => {
                     { reporterId: userId }
                 ]
             },
+            attributes: [
+                'id', 'title', 'startDate', 'dueDate', 'progress', 'priority', 'typeId'
+            ], // Chỉ lấy các trường cần thiết
             include: [
-                { model: Project, attributes: ['name'] },
-                { model: Status, attributes: ['name', 'color'] }
-            ]
+                { model: Project, attributes: ['name'] }, // Để vẽ biểu đồ theo Project
+                { model: Status, attributes: ['name', 'color'] } // Để vẽ biểu đồ theo Status
+            ],
+            order: [['startDate', 'ASC']]
         });
 
-        // Format dữ liệu cho thư viện gantt-task-react
-        const ganttData = tasks.map(task => {
-            // Xử lý ngày tháng: Gantt cần Date object hợp lệ
-            let start = task.startDate ? new Date(task.startDate) : new Date(task.createdAt);
-            let end = task.dueDate ? new Date(task.dueDate) : new Date(start.getTime() + 86400000); // +1 ngày nếu null
+        // Map dữ liệu sang format Frontend cần
+        const formattedData = tasks.map(task => {
+            // Xử lý ngày tháng an toàn (tránh null gây lỗi biểu đồ)
+            let start = task.startDate ? new Date(task.startDate) : new Date();
+            let end = task.dueDate ? new Date(task.dueDate) : new Date(start.getTime() + 86400000);
 
-            // Đảm bảo end > start (nếu không biểu đồ lỗi)
-            if (end <= start) {
-                end = new Date(start.getTime() + 86400000);
-            }
+            // Gantt chart yêu cầu End > Start
+            if (end <= start) end = new Date(start.getTime() + 86400000);
 
             return {
+                id: String(task.id),
+                name: task.title,
                 start: start,
                 end: end,
-                name: task.title,
-                id: String(task.id),
-                type: 'task',
                 progress: task.progress || 0,
-                isDisabled: true, // Chỉ xem, không kéo thả trực tiếp trên Dashboard
+                type: 'task',
+                project: task.project ? task.project.name : 'No Project', // Dữ liệu cho Bar Chart
+                status: task.status ? task.status.name : 'Unknown',       // Dữ liệu cho Pie Chart
+
+                // Config màu sắc cho Gantt
                 styles: {
                     progressColor: task.status?.color || '#007bff',
                     progressSelectedColor: '#0056b3'
                 },
-                project: task.project?.name || 'No Project'
+                isDisabled: true // Chỉ xem
             };
         });
 
-        res.status(200).send(ganttData);
+        res.status(200).send(formattedData);
     } catch (error) {
+        console.error("Gantt Error:", error);
         res.status(500).send({ message: error.message });
     }
 };
