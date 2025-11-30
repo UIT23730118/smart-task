@@ -129,7 +129,7 @@ const MainLayout = () => {
                 </Content>
 
                 <Footer style={{ textAlign: 'center' }}>
-                    Smart Task Manager ©{new Date().getFullYear()} Created by UIT23730118 Using Ant Design
+                    Smart Task Manager ©{new Date().getFullYear()} Created by UIT23730118 & UIT23730110 Using Ant Design
                 </Footer>
             </Layout>
         </Layout>
