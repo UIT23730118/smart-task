@@ -3,13 +3,13 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AuthService from '../api/auth.service';
 import { useAuth } from '../context/AuthContext';
-import AuthLayout from '../components/Auth/AuthLayout'; // 1. Import Layout
+import AuthLayout from '../components/Auth/AuthLayout';
 
 const Login = () => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
-    const [loading, setLoading] = useState(false); // Thêm loading
+    const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
     const { login } = useAuth();
 
@@ -17,19 +17,19 @@ const Login = () => {
         e.preventDefault();
         setError('');
         setLoading(true);
+
         try {
             const userData = await AuthService.login(email, password);
             login(userData);
             navigate('/dashboard');
         } catch (err) {
-            setError(err.response?.data?.message || 'Đăng nhập thất bại.');
+            setError(err.response?.data?.message || 'Login failed.');
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        // 2. Sử dụng AuthLayout
         <AuthLayout isLogin={true}>
             <form onSubmit={handleSubmit} style={{ textAlign: 'left' }}>
                 <div className="form-group">
@@ -43,8 +43,9 @@ const Login = () => {
                         required
                     />
                 </div>
+
                 <div className="form-group">
-                    <label className="form-label" htmlFor="password">Mật khẩu</label>
+                    <label className="form-label" htmlFor="password">Password</label>
                     <input
                         type="password"
                         id="password"
@@ -57,8 +58,13 @@ const Login = () => {
 
                 {error && <div className="alert alert-danger">{error}</div>}
 
-                <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={loading}>
-                    {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
+                <button
+                    type="submit"
+                    className="btn btn-primary"
+                    style={{ width: '100%' }}
+                    disabled={loading}
+                >
+                    {loading ? 'Logging in...' : 'Login'}
                 </button>
             </form>
         </AuthLayout>

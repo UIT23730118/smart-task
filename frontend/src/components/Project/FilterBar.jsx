@@ -7,7 +7,7 @@ export default function FilterBar({ searchTerm, setSearchTerm, filterAssignee, s
       
       {/* Search Input */}
       <Input
-        placeholder="Tìm kiếm..."
+        placeholder="Search..."
         prefix={<SearchOutlined />}
         value={searchTerm}
         onChange={(e) => setSearchTerm(e.target.value)}
@@ -23,7 +23,7 @@ export default function FilterBar({ searchTerm, setSearchTerm, filterAssignee, s
           style={{ width: 200 }}
           onChange={(value) => setFilterAssignee(value)}
           options={[
-            { label: "Tất cả thành viên", value: "all" },
+            { label: "All Members", value: "all" },
             ...projectData.members.map((m) => ({
               label: m.name,
               value: m.id

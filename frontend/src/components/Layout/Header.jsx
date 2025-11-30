@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-// Cần cài: npm install react-icons
+// Install if needed: npm install react-icons
 import { FaCheckSquare, FaThLarge, FaFolder, FaUsers, FaBell } from 'react-icons/fa';
 
 const Header = () => {
@@ -15,13 +15,13 @@ const Header = () => {
         navigate('/');
     };
 
-    // Style cho link active
+    // Active link styling
     const getNavLinkClass = ({ isActive }) =>
         isActive ? "nav-link active" : "nav-link";
 
     return (
         <header className="app-header">
-            {/* 1. Logo TaskFlow */}
+            {/* 1. TaskFlow Logo */}
             <div className="logo-section">
                 <FaCheckSquare className="logo-icon" />
                 <span className="logo-text">TaskFlow</span>
@@ -33,12 +33,14 @@ const Header = () => {
                 <NavLink to="/dashboard" className={getNavLinkClass}>
                     <FaThLarge /> Dashboard
                 </NavLink>
+
                 <NavLink to="/projects" className={getNavLinkClass}>
-                    {/* Lưu ý: Bạn cần tạo route /projects nếu chưa có, hoặc trỏ về dashboard tạm */}
+                    {/* Make sure the /projects route exists, or temporarily redirect to dashboard */}
                     <FaFolder /> Projects
                 </NavLink>
+
                 <NavLink to="/team" className={getNavLinkClass}>
-                    {/* Tương tự với route /team */}
+                    {/* Same for /team route */}
                     <FaUsers /> Team
                 </NavLink>
             </nav>
@@ -56,7 +58,7 @@ const Header = () => {
 
                 {dropdownOpen && (
                     <div className="dropdown-menu">
-                        <div className="dropdown-item" onClick={handleLogout}>Đăng xuất</div>
+                        <div className="dropdown-item" onClick={handleLogout}>Logout</div>
                     </div>
                 )}
             </div>

@@ -12,15 +12,17 @@
   --bg-light: #f4f5f7;
   --bg-white: #ffffff;
   --border-color: #ddd;
-  --font-base: "-apple-system", BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
-"Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
-"Noto Color Emoji";
+  --font-family-sans-serif: 'Inter', sans-serif; /* Phông chữ chính: Inter */
+  --font-family-serif: 'Lora', serif; /* Phông chữ có chân: Lora */
+  --font-size-base: 1rem;
+  --line-height-base: 1.5;
 }
 
 /* --- 1. RESET & BASE --- */
 body {
   margin: 0;
-  font-family: var(--font-base);
+  font-family: var(--font-family-sans-serif);
+  font-size: var(--font-size-base);
   background-color: #fff;
   color: var(--text-color);
   line-height: 1.5;
@@ -527,9 +529,10 @@ h5,
 h6 {
   margin-top: 0;
   margin-bottom: 0.5rem;
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1.2;
   color: var(--text-dark-color);
+  font-family: var(--font-family-serif);
 }
 
 h1 {

@@ -1,9 +1,8 @@
-// /src/components/Auth/AuthLayout.jsx
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { FaTasks } from 'react-icons/fa';
 
-// `children` sẽ là SigninForm hoặc SignupForm
+// `children` will be SigninForm or SignupForm
 const AuthLayout = ({ children, isLogin = true }) => {
     return (
         <div className="auth-wrapper">
@@ -13,19 +12,19 @@ const AuthLayout = ({ children, isLogin = true }) => {
                 <div className="auth-logo-section">
                     <FaTasks size={32} className="text-primary" />
                     <h2 className="logo-text mt-2">SmartTask</h2>
-                    <p className="tagline">Quản lý dự án thông minh của bạn</p>
+                    <p className="tagline">Your intelligent project management</p>
                 </div>
 
                 {/* Tabs (Login/Register) */}
                 <div className="auth-tabs">
                     <NavLink to="/" className="auth-tab-item">
                         <button className={isLogin ? 'active' : ''}>
-                            Đăng nhập
+                            Login
                         </button>
                     </NavLink>
                     <NavLink to="/register" className="auth-tab-item">
                         <button className={!isLogin ? 'active' : ''}>
-                            Đăng ký
+                            Register
                         </button>
                     </NavLink>
                 </div>

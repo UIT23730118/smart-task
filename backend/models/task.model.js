@@ -23,6 +23,14 @@ module.exports = (sequelize, Sequelize) => {
 		statusId: { type: Sequelize.INTEGER },
 		typeId: { type: Sequelize.INTEGER },
 		resolutionId: { type: Sequelize.INTEGER },
+		suggestedAssigneeId: { // Cột mới
+            type: Sequelize.INTEGER,
+            allowNull: true,
+        },
+        subtasksTemplate: { // Cột mới
+            type: Sequelize.JSON,
+            allowNull: true,
+        },
 	});
 	return Task;
 };

@@ -1,4 +1,3 @@
-// /src/components/Project/MemberManager.jsx
 import React, { useState } from "react";
 import ProjectService from "../../api/project.service";
 import { FaTrash, FaUserPlus } from "react-icons/fa";
@@ -13,21 +12,21 @@ const MemberManager = ({ members, projectId, onMemberChanged, userRole }) => {
     setMessage("");
     try {
       await ProjectService.addMember(projectId, email);
-      setMessage("Thêm thành viên thành công!");
+      setMessage("Member added successfully!");
       setEmail("");
       onMemberChanged();
     } catch (err) {
-      setError(err.response?.data?.message || "Lỗi khi thêm thành viên.");
+      setError(err.response?.data?.message || "Error adding member.");
     }
   };
 
   const handleRemoveMember = async (userId) => {
-    if (window.confirm("Bạn có chắc muốn xóa thành viên này?")) {
+    if (window.confirm("Are you sure you want to remove this member?")) {
       try {
         await ProjectService.removeMember(projectId, userId);
         onMemberChanged();
       } catch (err) {
-        alert(err.response?.data?.message || "Lỗi khi xóa thành viên.");
+        alert(err.response?.data?.message || "Error removing member.");
       }
     }
   };
@@ -38,9 +37,6 @@ const MemberManager = ({ members, projectId, onMemberChanged, userRole }) => {
 
       <div className="member-list">
         {members.map((member) => {
-          // --- FIX LỖI Ở ĐÂY ---
-          // Cấu trúc cũ: member.project_members.role
-          // Cấu trúc mới: member.team_members.role (Do Sequelize trả về từ bảng nối)
           const roleName = member.team_members
             ? member.team_members.role
             : "Member";
@@ -59,12 +55,12 @@ const MemberManager = ({ members, projectId, onMemberChanged, userRole }) => {
                 </span>
               </div>
 
-              {/* Chỉ Leader mới thấy nút xóa */}
+              {/* Only leader can remove */}
               {userRole === "leader" && (
                 <button
                   className="member-remove-btn"
                   onClick={() => handleRemoveMember(member.id)}
-                  title="Xóa khỏi project"
+                  title="Remove from project"
                 >
                   <FaTrash size={14} />
                 </button>
@@ -74,19 +70,19 @@ const MemberManager = ({ members, projectId, onMemberChanged, userRole }) => {
         })}
       </div>
 
-      {/* Chỉ Leader mới thấy form thêm */}
+      {/* Only leader can add */}
       {userRole === "leader" && (
         <div className="member-add-form">
           <input
             type="email"
             className="form-control"
-            placeholder="Email thành viên..."
+            placeholder="Member email..."
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             style={{ width: "300px" }}
           />
           <button className="btn btn-primary" onClick={handleAddMember}>
-            <FaUserPlus /> Thêm
+            <FaUserPlus /> Add
           </button>
         </div>
       )}

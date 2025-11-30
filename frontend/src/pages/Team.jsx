@@ -11,14 +11,14 @@ const Team = () => {
   const [currentProjectMembers, setCurrentProjectMembers] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // 1. Tải danh sách project của user
+  // 1. Load the user's project list
   useEffect(() => {
     const fetchProjects = async () => {
       try {
         const res = await ProjectService.getMyProjects();
         setProjects(res.data);
 
-        // Mặc định chọn project đầu tiên nếu có
+        // Default: select first project if exists
         if (res.data.length > 0) {
           setSelectedProjectId(res.data[0].id);
         }
@@ -31,7 +31,7 @@ const Team = () => {
     fetchProjects();
   }, []);
 
-  // 2. Tải thành viên khi Project được chọn thay đổi
+  // 2. Load project members when selected project changes
   const fetchMembers = async () => {
     if (!selectedProjectId) return;
     try {
@@ -57,7 +57,7 @@ const Team = () => {
       <div className="page-header">
         <div>
           <h1>Team Management</h1>
-          <p>Quản lý thành viên của các dự án</p>
+          <p>Manage members across your projects</p>
         </div>
       </div>
 
@@ -66,7 +66,7 @@ const Team = () => {
         <label
           style={{ fontWeight: "bold", display: "block", marginBottom: "10px" }}
         >
-          <FaExchangeAlt /> Chọn Dự Án:
+          <FaExchangeAlt /> Select Project:
         </label>
         <select
           className="form-control"
@@ -94,7 +94,7 @@ const Team = () => {
             }}
           >
             <FaUsers size={24} color="#007bff" />
-            <h3 style={{ margin: 0 }}>Danh sách thành viên</h3>
+            <h3 style={{ margin: 0 }}>Member List</h3>
           </div>
 
           <MemberManager
@@ -106,7 +106,7 @@ const Team = () => {
         </div>
       ) : (
         <div className="empty-state">
-          <p>Bạn chưa tham gia dự án nào.</p>
+          <p>You are not part of any project yet.</p>
         </div>
       )}
     </div>

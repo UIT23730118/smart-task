@@ -54,6 +54,10 @@ db.tasks.belongsTo(db.users, { foreignKey: 'reporterId', as: 'reporter' });
 db.users.hasMany(db.tasks, { foreignKey: 'assigneeId', as: 'assignedTasks' });
 db.tasks.belongsTo(db.users, { foreignKey: 'assigneeId', as: 'assignee' });
 
+db.users.hasMany(db.tasks, { foreignKey: 'suggestedAssigneeId', as: 'suggestedTasks' });
+db.tasks.belongsTo(db.users, { foreignKey: 'suggestedAssigneeId', as: 'suggestedAssignee' });
+// ------------------------------------
+
 // 4. Task Metadata (Status, Types, etc.)
 db.statuses.hasMany(db.tasks, { foreignKey: 'statusId' });
 db.tasks.belongsTo(db.statuses, { foreignKey: 'statusId' });

@@ -38,7 +38,7 @@ const Dashboard = () => {
         const loadData = async () => {
             setLoading(true);
             try {
-                // Fetch actual dashboard data
+                // Fetch dashboard data
                 const [statsRes, ganttRes] = await Promise.all([
                     DashboardService.getDashboardStats(),
                     DashboardService.getGanttTasks()
@@ -48,7 +48,7 @@ const Dashboard = () => {
 
                 const rawTasks = ganttRes.data;
                 if (rawTasks && rawTasks.length > 0) {
-                    // 1. Format dates for Gantt chart
+                    // 1. Format date values for Gantt chart
                     const formattedGantt = rawTasks.map(t => ({
                         ...t,
                         start: new Date(t.start),
@@ -56,10 +56,9 @@ const Dashboard = () => {
                     }));
                     setGanttTasks(formattedGantt);
 
-                    // 2. Process chart data from task list
+                    // 2. Generate chart data from task list
                     processCharts(formattedGantt, statsRes.data);
                 } else {
-                    // No tasks available
                     setGanttTasks([]);
                     setProjectChartData([]);
                     setStatusChartData([]);
@@ -74,10 +73,9 @@ const Dashboard = () => {
         loadData();
     }, []);
 
-    // Function to process chart data
-    const processCharts = (tasks, statistics) => {
-        // --- Pie Chart (Status) ---
-        // Group tasks by Status Name
+    // Generate data for charts
+    const processCharts = (tasks) => {
+        // --- Pie Chart (Status Distribution) ---
         const statusCount = {};
         tasks.forEach(t => {
             const sName = t.status || 'Unknown';
@@ -90,8 +88,7 @@ const Dashboard = () => {
         }));
         setStatusChartData(pieData);
 
-        // --- Bar Chart (Project) ---
-        // Group tasks by Project Name
+        // --- Bar Chart (Tasks by Project) ---
         const projCount = {};
         tasks.forEach(t => {
             const pName = t.project || 'No Project';
@@ -116,8 +113,8 @@ const Dashboard = () => {
 
             {/* Header */}
             <div style={{ marginBottom: '24px' }}>
-                <Title level={2} style={{ marginBottom: 0 }}>Overview</Title>
-                <Text type="secondary">Hello, {user.name}! Here is the real data from the system.</Text>
+                <Title level={2} style={{ marginBottom: 0 }}>Dashboard Overview</Title>
+                <Text type="secondary">Hello, {user.name}! Here is your real-time activity summary.</Text>
             </div>
 
             {/* 1. Statistics Cards */}
@@ -148,7 +145,7 @@ const Dashboard = () => {
                 </Col>
             </Row>
 
-            {/* 2. Charts Area (Only show if data exists) */}
+            {/* 2. Charts Section */}
             {ganttTasks.length > 0 ? (
                 <>
                     <Row gutter={[16, 16]} style={{ marginTop: '24px' }}>
@@ -162,7 +159,7 @@ const Dashboard = () => {
                                         <YAxis allowDecimals={false} />
                                         <Tooltip />
                                         <Legend />
-                                        <Bar dataKey="tasks" name="Number of Tasks" fill="#8884d8">
+                                        <Bar dataKey="tasks" name="Total Tasks" fill="#8884d8">
                                             {projectChartData.map((entry, index) => (
                                                 <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                             ))}
@@ -197,7 +194,7 @@ const Dashboard = () => {
                     {/* 3. Gantt Chart */}
                     <Card
                         style={{ marginTop: '24px' }}
-                        title="Gantt Chart (Progress)"
+                        title="Gantt Chart (Project Timeline)"
                         bordered={false}
                         extra={
                             <Segmented
@@ -228,7 +225,7 @@ const Dashboard = () => {
                 </>
             ) : (
                 <Empty
-                    description="No tasks available. Create a new project and tasks to see the report."
+                    description="No tasks available. Create a project and tasks to view analytics."
                     style={{ marginTop: '50px' }}
                 />
             )}

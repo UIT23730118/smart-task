@@ -10,7 +10,7 @@ const Register = () => {
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [message, setMessage] = useState('');
-    const [loading, setLoading] = useState(false); // Thêm loading
+    const [loading, setLoading] = useState(false); // Add loading
     const navigate = useNavigate();
 
     const handleSubmit = async (e) => {
@@ -20,26 +20,26 @@ const Register = () => {
         setLoading(true);
         try {
             await AuthService.register(name, email, password);
-            setMessage('Đăng ký thành công! Đang chuyển đến trang đăng nhập...');
+            setMessage('Registration successful! Redirecting to login page...');
             setTimeout(() => {
                 navigate('/');
             }, 2000);
         } catch (err) {
-            setError(err.response?.data?.message || 'Đăng ký thất bại.');
+            setError(err.response?.data?.message || 'Registration failed.');
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        // 2. Sử dụng AuthLayout
+        // 2. Use AuthLayout
         <AuthLayout isLogin={false}>
             <form onSubmit={handleSubmit} style={{ textAlign: 'left' }}>
                 {message && <div className="alert alert-success">{message}</div>}
                 {error && <div className="alert alert-danger">{error}</div>}
 
                 <div className="form-group">
-                    <label className="form-label" htmlFor="name">Tên của bạn</label>
+                    <label className="form-label" htmlFor="name">Your Name</label>
                     <input
                         type="text"
                         id="name"
@@ -61,7 +61,7 @@ const Register = () => {
                     />
                 </div>
                 <div className="form-group">
-                    <label className="form-label" htmlFor="password">Mật khẩu</label>
+                    <label className="form-label" htmlFor="password">Password</label>
                     <input
                         type="password"
                         id="password"
@@ -73,7 +73,7 @@ const Register = () => {
                 </div>
 
                 <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={loading}>
-                    {loading ? 'Đang đăng ký...' : 'Đăng ký'}
+                    {loading ? 'Registering...' : 'Register'}
                 </button>
             </form>
         </AuthLayout>

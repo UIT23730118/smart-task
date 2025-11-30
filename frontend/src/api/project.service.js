@@ -28,12 +28,20 @@ const createProject = (data) => {
     return api.post('/projects', data, { headers: authHeader() });
 };
 
+const exportWorkloadReport = (projectId) => {
+    return api.get(`/projects/${projectId}/reports/workload`, { 
+        headers: authHeader(),
+        responseType: 'blob' // RẤT QUAN TRỌNG: Yêu cầu Axios trả về dữ liệu nhị phân (blob)
+    });
+};
+
 const ProjectService = {
     getMyProjects,
     getProjectDetails, // Thêm
     addMember,         // Thêm
     removeMember,      // Thêm
     createProject,
+    exportWorkloadReport,
 };
 
 export default ProjectService;

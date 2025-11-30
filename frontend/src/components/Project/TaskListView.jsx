@@ -194,7 +194,7 @@ const TaskListView = ({ tasks, onTaskClick }) => {
                 {/* Due Date */}
                 <td style={{ padding: "10px", color: "#666" }}>
                   {task.dueDate
-                    ? new Date(task.dueDate).toLocaleDateString("vi-VN")
+                    ? new Date(task.dueDate).toLocaleDateString("en-US")
                     : ""}
                 </td>
               </tr>
@@ -205,7 +205,7 @@ const TaskListView = ({ tasks, onTaskClick }) => {
                 colSpan="7"
                 style={{ padding: "30px", textAlign: "center", color: "#999" }}
               >
-                Không tìm thấy task nào.
+                No tasks found.
               </td>
             </tr>
           )}
