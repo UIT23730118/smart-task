@@ -9,7 +9,10 @@ import {
     FileOutlined,
     LogoutOutlined,
     UserOutlined,
+    SunOutlined,
+    MoonOutlined,
 } from '@ant-design/icons';
+import NotificationBell from '../NotificationBell';
 
 const { Header, Content, Footer, Sider } = Layout;
 
@@ -96,8 +99,11 @@ const MainLayout = () => {
                         display: 'flex',
                         justifyContent: 'flex-end',
                         alignItems: 'center',
+                        gap: '10px',
+                        fontFamily: 'Inter, sans-serif',
                     }}
                 >
+                    <NotificationBell />
                     {/* --- USER INFO & LOGOUT --- */}
                     <Dropdown menu={{ items: userMenuItems }} trigger={['click']}>
                         <a onClick={e => e.preventDefault()}>

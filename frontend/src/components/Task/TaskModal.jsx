@@ -1,5 +1,3 @@
-// /src/components/Task/TaskModal.jsx (FIXED with Form Hook and Dayjs conversion)
-
 import React, { useState, useEffect, useMemo } from "react";
 import {
   Modal, Form, Input, Select, DatePicker, Slider,
@@ -39,12 +37,12 @@ const TaskModal = ({
 }) => {
   const { user } = useAuth();
   const isEditMode = !!taskId;
-  
+
   // 1. KHAI BÁO FORM HOOK
-  const [form] = Form.useForm(); 
+  const [form] = Form.useForm();
 
   // --- STATE ---
-  const [formData, setFormData] = useState({ 
+  const [formData, setFormData] = useState({
     // Giữ lại state phụ (ví dụ: suggestedAssigneeId)
     suggestedAssigneeId: undefined,
   });
@@ -82,12 +80,22 @@ const TaskModal = ({
       TaskService.getTaskDetails(taskId)
         .then((res) => {
           const t = res.data;
-          
+
+          let assignedId = t.assigneeId;
+          // FIX 1: ĐẢM BẢO GIÁ TRỊ LÀ SỐ HOẶC UNDEFINED
+          if (assignedId !== null && assignedId !== undefined) {
+            const numId = Number(assignedId);
+            // Chỉ giữ lại giá trị nếu nó là số hợp lệ (không phải NaN)
+            assignedId = isNaN(numId) ? undefined : numId;
+          } else {
+            assignedId = undefined;
+          }
+
           // SET GIÁ TRỊ VÀO FORM (Day.js objects)
           form.setFieldsValue({
             title: t.title,
             description: t.description || "",
-            assigneeId: t.assigneeId || undefined,
+            assigneeId: assignedId, // Giá trị đã được ép kiểu số
             priority: t.priority || "Minor",
             statusId: t.statusId || (statuses.length > 0 ? statuses[0].id : undefined),
             startDate: t.startDate ? dayjs(t.startDate) : null,
@@ -96,11 +104,11 @@ const TaskModal = ({
           });
 
           // Cập nhật state phụ
-          setFormData(prev => ({ 
+          setFormData(prev => ({
             ...prev,
             suggestedAssigneeId: t.suggestedAssigneeId || undefined,
           }));
-          
+
           setComments(t.comments || []);
           fetchTaskAttachments();
         })
@@ -118,7 +126,7 @@ const TaskModal = ({
       form.setFieldsValue(defaultValues);
       setFormData(prev => ({ ...prev, suggestedAssigneeId: undefined }));
     }
-  }, [taskId, isEditMode, statuses, form]);
+  }, [taskId, isEditMode, statuses, form, members]);
 
   // --- COMMON HANDLERS ---
   const updateField = (field, value) => {
@@ -153,7 +161,7 @@ const TaskModal = ({
         startDate: values.startDate ? values.startDate.toISOString() : null,
         dueDate: values.dueDate ? values.dueDate.toISOString() : null,
         assigneeId: values.assigneeId || null,
-        suggestedAssigneeId: undefined, 
+        suggestedAssigneeId: undefined,
       };
 
       if (isEditMode) await TaskService.updateTask(taskId, payload);
@@ -353,75 +361,73 @@ const TaskModal = ({
     </div>
   ), [taskAttachments, user.name, taskUploadProps]);
 
-  // --- TASK INFO TAB (SỬ DỤNG FORM HOOK) ---
+  // --- TASK INFO TAB (SỬ DỤNG FORM HOOK & GỘP FORM) ---
   const TaskInfoTab = () => (
-    <Row gutter={[24, 24]}>
-      {/* Left Column (Main Info & Comments) */}
-      <Col xs={24} md={16}>
-        {/* 5. GÁN FORM INSTANCE VÀO COMPONENT */}
-        <Form 
-            form={form} 
-            layout="vertical"
-        >
+    <Form
+      form={form}
+      layout="vertical"
+    >
+      <Row gutter={[24, 24]}>
+        {/* Left Column (Main Info & Comments) */}
+        <Col xs={24} md={16}>
           {/* TITLE & DESCRIPTION: Đã chuyển sang quản lý bằng Form.Item */}
-          <Form.Item 
-            label={<b>Title</b>} 
-            name="title" 
+          <Form.Item
+            label={<b>Title</b>}
+            name="title"
             rules={[{ required: true, message: 'Please input the task title!' }]}
           >
             <Input size="large" placeholder="Enter task title..." />
           </Form.Item>
-          
+
           <Form.Item label={<b>Description</b>} name="description">
             <TextArea rows={6} placeholder="Detailed description..." />
           </Form.Item>
-        
+
           {/* COMMENTS (GIỮ NGUYÊN) */}
-        {isEditMode && (
-          <div style={{ marginTop: 30 }}>
-            <Divider orientation="left">Comments</Divider>
-            <div style={{ maxHeight: '300px', overflowY: 'auto', paddingRight: '10px' }}>
-              <List
-                itemLayout="horizontal"
-                dataSource={comments}
-                locale={{ emptyText: "No comments yet." }}
-                renderItem={(item) => (
-                  <List.Item>
-                    <List.Item.Meta
-                      avatar={<Avatar style={{ backgroundColor: '#87d068' }}>{item.user?.name?.charAt(0)?.toUpperCase() || <UserOutlined />}</Avatar>}
-                      title={
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span style={{ fontWeight: 'bold' }}>{item.user?.name || "Unknown User"}</span>
-                          <span style={{ fontSize: '12px', color: '#999' }}>
-                            {dayjs(item.createdAt).format("MMM D, YYYY HH:mm")}
-                          </span>
-                        </div>
-                      }
-                      description={
-                        <div style={{ backgroundColor: '#f5f5f5', padding: '8px 12px', borderRadius: '8px', marginTop: '4px', color: '#333' }}>
-                          {item.message}
-                        </div>
-                      }
-                    />
-                  </List.Item>
-                )}
-              />
-            </div>
+          {isEditMode && (
+            <div style={{ marginTop: 30 }}>
+              <Divider orientation="left">Comments</Divider>
+              <div style={{ maxHeight: '300px', overflowY: 'auto', paddingRight: '10px' }}>
+                <List
+                  itemLayout="horizontal"
+                  dataSource={comments}
+                  locale={{ emptyText: "No comments yet." }}
+                  renderItem={(item) => (
+                    <List.Item>
+                      <List.Item.Meta
+                        avatar={<Avatar style={{ backgroundColor: '#87d068' }}>{item.user?.name?.charAt(0)?.toUpperCase() || <UserOutlined />}</Avatar>}
+                        title={
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span style={{ fontWeight: 'bold' }}>{item.user?.name || "Unknown User"}</span>
+                            <span style={{ fontSize: '12px', color: '#999' }}>
+                              {dayjs(item.createdAt).format("MMM D, YYYY HH:mm")}
+                            </span>
+                          </div>
+                        }
+                        description={
+                          <div style={{ backgroundColor: '#f5f5f5', padding: '8px 12px', borderRadius: '8px', marginTop: '4px', color: '#333' }}>
+                            {item.message}
+                          </div>
+                        }
+                      />
+                    </List.Item>
+                  )}
+                />
+              </div>
 
-            <div style={{ display: 'flex', gap: 10, marginTop: 15 }}>
-              <Input placeholder="Write a comment..." value={newComment} onChange={(e) => setNewComment(e.target.value)} onPressEnter={handleAddComment} />
-              <Button type="primary" icon={<SendOutlined />} onClick={handleAddComment} loading={commentLoading}>
-                Send
-              </Button>
+              <div style={{ display: 'flex', gap: 10, marginTop: 15 }}>
+                <Input placeholder="Write a comment..." value={newComment} onChange={(e) => setNewComment(e.target.value)} onPressEnter={handleAddComment} />
+                <Button type="primary" icon={<SendOutlined />} onClick={handleAddComment} loading={commentLoading}>
+                  Send
+                </Button>
+              </div>
             </div>
-          </div>
-        )}
-        </Form>
-      </Col>
+          )}
+        </Col>
 
-      {/* Right Column (Meta Data - Đã chuyển sang Form.Item) */}
-      <Col xs={24} md={8} style={{ borderLeft: '1px solid #f0f0f0', paddingLeft: '24px' }}>
-        <Form form={form} layout="vertical">
+        {/* Right Column (Meta Data - Bây giờ chỉ chứa Form.Item) */}
+        <Col xs={24} md={8} style={{ borderLeft: '1px solid #f0f0f0', paddingLeft: '24px' }}>
+
           <Form.Item label="Status" name="statusId">
             <Select placeholder="Select status">
               {statuses?.map((s) => (<Option key={s.id} value={s.id}>{s.name}</Option>))}
@@ -431,7 +437,13 @@ const TaskModal = ({
           <Form.Item label="Assignee" name="assigneeId">
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <div style={{ flexGrow: 1 }}>
-                <Select placeholder="-- Unassigned --" allowClear>
+                <Select
+                  placeholder="-- Unassigned --"
+                  allowClear
+                  value={formData.assigneeId}
+                  onChange={(value) => {
+                    form.setFieldsValue({ assigneeId: value });
+                  }}>
                   {members?.map((m) => (
                     <Option key={m.id} value={m.id}>
                       <Avatar size="small" style={{ marginRight: 8, backgroundColor: '#1890ff' }}>{m.name?.charAt(0)}</Avatar>
@@ -449,7 +461,7 @@ const TaskModal = ({
                   onClick={handleSuggestAssignee}
                   loading={loadingSuggest}
                   title="System assignment suggestion"
-                  htmlType="button" 
+                  htmlType="button"
                 />
               )}
             </div>
@@ -503,17 +515,18 @@ const TaskModal = ({
           </Form.Item>
 
           {/* Slider cần phải được wrap bởi Form.Item và có `name` */}
-          <Form.Item 
-            label={`Progress: ${form.getFieldValue('progress') || 0}%`} 
+          <Form.Item
+            label={`Progress: ${form.getFieldValue('progress') || 0}%`}
             name="progress"
             // Thêm normalize để Slider không bị re-render do thay đổi label
-            normalize={value => value === undefined ? 0 : value} 
+            normalize={value => value === undefined ? 0 : value}
           >
             <Slider min={0} max={100} />
           </Form.Item>
-        </Form>
-      </Col>
-    </Row>
+
+        </Col>
+      </Row>
+    </Form>
   );
 
   // --- TABS ---
@@ -527,7 +540,7 @@ const TaskModal = ({
     ...(isEditMode ? [{
       key: 'attachments',
       label: <><PaperClipOutlined /> Attachments ({taskAttachments.length})</>,
-      children: <TaskAttachmentsTab /> 
+      children: <TaskAttachmentsTab />
     }] : [])
   ];
 

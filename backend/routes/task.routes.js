@@ -47,6 +47,9 @@ module.exports = function (app) {
         taskController.createTask
     );
 
+    // TÌM KIẾM TASK
+    app.get('/api/tasks', [authJwt.verifyToken], taskController.findAll);
+
     // Lấy chi tiết task (yêu cầu đăng nhập)
     app.get(
         '/api/tasks/:id',
