@@ -1,4 +1,4 @@
-// /src/pages/ProjectDetail.jsx (FINAL UPDATE – ENGLISH VERSION)
+// /src/pages/ProjectDetail.jsx 
 
 import React, { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
@@ -19,7 +19,8 @@ import TaskService from "../api/task.service";
 import TaskCard from "../components/Task/TaskCard";
 import TaskModal from "../components/Task/TaskModal";
 import TaskListView from "../components/Project/TaskListView";
-import FilterBar from "../components/Project/FilterBar";
+// Đã thay thế FilterBar bằng TaskFilter
+import TaskFilter from "../components/Task/TaskFilter"; 
 import { useAuth } from "../context/AuthContext";
 
 import { FaUsersCog, FaRegListAlt } from "react-icons/fa";
@@ -35,8 +36,8 @@ const ProjectDetail = () => {
   const [error, setError] = useState("");
 
   // Filter & View state
-  const [searchTerm, setSearchTerm] = useState("");
-  const [filterAssignee, setFilterAssignee] = useState("all");
+  // Đã thay thế searchTerm và filterAssignee bằng một object filters
+  const [filters, setFilters] = useState({}); 
   const [viewMode, setViewMode] = useState("list");
 
   // Task modal state
@@ -46,7 +47,14 @@ const ProjectDetail = () => {
   // Project attachment state
   const [fileList, setFileList] = useState([]);
 
+  // --- FILTER HANDLER ---
+  const handleFilterChange = (newFilters) => {
+    // Cập nhật state filters khi TaskFilter trả về giá trị
+    setFilters(newFilters);
+  };
+  
   const fetchProjectAttachments = async () => {
+    if (!projectId) return;
     try {
       const res = await TaskService.getProjectAttachments(projectId);
       const formattedFiles = res.data.map(f => ({
@@ -220,13 +228,37 @@ const ProjectDetail = () => {
     );
   };
 
-  // Apply filters
+  // Áp dụng logic lọc mới từ state filters
   const filteredTasks = projectData.tasks.filter((task) => {
-    const matchesSearch = task.title.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesAssignee =
-      filterAssignee === "all" ||
-      (task.assignee && task.assignee.id === parseInt(filterAssignee));
-    return matchesSearch && matchesAssignee;
+    let matches = true;
+    
+    // Lọc theo Key/Summary (key)
+    if (filters.key) {
+        const key = filters.key.toLowerCase();
+        // Giả sử key filter tìm kiếm trong title và description
+        matches = matches && (task.title.toLowerCase().includes(key) || (task.description && task.description.toLowerCase().includes(key)));
+    }
+    
+    // Lọc theo Priority
+    if (filters.priority) {
+        matches = matches && (task.priority === filters.priority);
+    }
+    
+    // Lọc theo Assignee ID
+    if (filters.assigneeId) {
+        // filters.assigneeId là số (number) hoặc undefined.
+        // Chú ý: task.assigneeId có thể là null, cần kiểm tra an toàn.
+        matches = matches && (task.assigneeId === Number(filters.assigneeId));
+    }
+    
+    // Lọc theo Due Date (filters.dueDate là YYYY-MM-DD)
+    if (filters.dueDate) {
+        // Lấy phần ngày tháng (YYYY-MM-DD) từ task.dueDate (ISO string)
+        const taskDueDate = task.dueDate ? task.dueDate.split('T')[0] : null; 
+        matches = matches && (taskDueDate === filters.dueDate);
+    }
+
+    return matches;
   });
 
   // Tab 1: Tasks
@@ -237,30 +269,42 @@ const ProjectDetail = () => {
         <TaskProgress completedTasks={completedTasks} totalTasks={totalTasks} />
       </div>
 
-      <div className="filter-bar">
-        <FilterBar
-          searchTerm={searchTerm}
-          setSearchTerm={setSearchTerm}
-          filterAssignee={filterAssignee}
-          setFilterAssignee={setFilterAssignee}
-          projectData={projectData}
+      {/* Điều chỉnh: Hợp nhất TaskFilter và các nút điều khiển vào cùng một hàng flex */}
+      {/* 1. TaskFilter (Form lọc chính, đã được điều chỉnh căn chỉnh Form.Item) */}
+      <div style={{ marginBottom: 15 }}> 
+        <TaskFilter
+            onSearch={handleFilterChange}
+            projectData={projectData}
+        />
+      </div>
+
+
+      {/* 2. Control Bar (View Switcher & Create Button) - Đặt ngay dưới Form Filter */}
+      <div 
+          className="flex justify-end items-center mb-4" 
+          style={{ display: 'flex', flexDirection: "row-reverse", justifyContent: 'flex-end', alignItems: 'center', gap: 10 }}
+      >
+        <Segmented
+          value={viewMode}
+          onChange={setViewMode}
+          options={[
+            { label: "List", value: "list", icon: <UnorderedListOutlined /> },
+            { label: "Board", value: "board", icon: <AppstoreOutlined /> },
+          ]}
+          className="view-switcher"
         />
 
-        <div style={{ display: "flex", flexDirection: "row-reverse", gap: 10 }}>
-          <Segmented
-            value={viewMode}
-            onChange={setViewMode}
-            options={[
-              { label: "List", value: "list", icon: <UnorderedListOutlined /> },
-              { label: "Board", value: "board", icon: <AppstoreOutlined /> },
-            ]}
-          />
-
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreateTaskModal}>
-            Create Task
-          </Button>
-        </div>
+        <Button 
+          type="primary" 
+          icon={<PlusOutlined />} 
+          onClick={openCreateTaskModal}
+          //className="btn btn-primary"
+        >
+          Create Task
+        </Button>
       </div>
+      {/* Kết thúc thanh hợp nhất */}
+
 
       <div style={{ marginTop: 20 }}>
         {viewMode === "list" ? (
