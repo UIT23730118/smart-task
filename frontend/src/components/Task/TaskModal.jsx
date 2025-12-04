@@ -10,13 +10,12 @@ import {
   InboxOutlined, FileTextOutlined,
   DeleteOutlined, DownloadOutlined,
   RobotOutlined, CheckOutlined,
-  MinusCircleOutlined // Icon cho nút Delete
+  MinusCircleOutlined
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 
 // Import isSameOrAfter plugin cho Day.js
 import isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
-
 
 import TaskService from "../../api/task.service";
 import { useAuth } from "../../context/AuthContext";
@@ -43,7 +42,6 @@ const TaskModal = ({
 
   // --- STATE ---
   const [formData, setFormData] = useState({
-    // Giữ lại state phụ (ví dụ: suggestedAssigneeId)
     suggestedAssigneeId: undefined,
   });
 
@@ -65,6 +63,7 @@ const TaskModal = ({
         uid: f.id,
         name: f.fileName,
         status: 'done',
+        // Đảm bảo đường dẫn này khớp với cấu hình server
         url: `/public/uploads/attachments/${f.filePath.split('/').pop()}`,
         user: { id: f.userId, name: "User name" },
       }));
@@ -82,25 +81,49 @@ const TaskModal = ({
           const t = res.data;
 
           let assignedId = t.assigneeId;
-          // FIX 1: ĐẢM BẢO GIÁ TRỊ LÀ SỐ HOẶC UNDEFINED
           if (assignedId !== null && assignedId !== undefined) {
             const numId = Number(assignedId);
-            // Chỉ giữ lại giá trị nếu nó là số hợp lệ (không phải NaN)
             assignedId = isNaN(numId) ? undefined : numId;
           } else {
             assignedId = undefined;
           }
 
+          // ==========================================================
+          // 💡 LOGIC TẢI: CHUỖI TEXT -> MẢNG (GIỮ NGUYÊN VÀ ĐÃ ĐƯỢC XÁC NHẬN ĐÚNG)
+          // ==========================================================
+          let requiredSkillsArray = [];
+          if (t.requiredSkills) {
+            if (Array.isArray(t.requiredSkills)) {
+              requiredSkillsArray = t.requiredSkills;
+            } else if (typeof t.requiredSkills === 'string') {
+              try {
+                // Cố gắng parse JSON nếu đã đổi sang Sequelize.JSON
+                requiredSkillsArray = JSON.parse(t.requiredSkills);
+                if (!Array.isArray(requiredSkillsArray)) {
+                  requiredSkillsArray = [];
+                }
+              } catch (e) {
+                // Nếu không phải JSON hợp lệ (chuỗi tags cũ), xử lý như chuỗi tags:
+                requiredSkillsArray = t.requiredSkills
+                  .split(/[\s,]+/)
+                  .map(s => s.trim())
+                  .filter(s => s.length > 0);
+              }
+            }
+          }
+          // ==========================================================
+
           // SET GIÁ TRỊ VÀO FORM (Day.js objects)
           form.setFieldsValue({
             title: t.title,
             description: t.description || "",
-            assigneeId: assignedId, // Giá trị đã được ép kiểu số
+            assigneeId: assignedId,
             priority: t.priority || "Minor",
             statusId: t.statusId || (statuses.length > 0 ? statuses[0].id : undefined),
             startDate: t.startDate ? dayjs(t.startDate) : null,
             dueDate: t.dueDate ? dayjs(t.dueDate) : null,
             progress: t.progress || 0,
+            requiredSkills: requiredSkillsArray // PHẢI LÀ MẢNG
           });
 
           // Cập nhật state phụ
@@ -128,39 +151,68 @@ const TaskModal = ({
     }
   }, [taskId, isEditMode, statuses, form, members]);
 
-  // --- COMMON HANDLERS ---
-  const updateField = (field, value) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-  };
+  // --- HANDLERS ---
 
   const handleSubmit = async () => {
     setLoading(true);
     try {
-      // 2. LẤY DỮ LIỆU TỪ FORM HOOK
+      // 1. Lấy giá trị gốc từ Form (values.requiredSkills là MẢNG hoặc null/undefined)
       const values = await form.validateFields();
 
-      // 3. CHUYỂN ĐỔI DAY.JS OBJECT (HOẶC STRING) LẠI THÀNH DAY.JS OBJECT CHO VIỆC SO SÁNH
+      // 2. CHUYỂN ĐỔI MẢNG TAGS TỪ FORM SANG CHUỖI TEXT CHO DB
+      let skillsPayload = values.requiredSkills; // (Đây là một MẢNG từ Select mode="tags")
+
+      // Chỉ xử lý nếu nó là mảng
+      if (Array.isArray(skillsPayload)) {
+        // Chuyển MẢNG sang CHUỖI TEXT, nối bằng dấu phẩy
+        skillsPayload = skillsPayload
+          .filter(s => s.trim().length > 0)
+          .join(',');
+      }
+
+      // Nếu kết quả là chuỗi rỗng sau khi join, đặt là null
+      if (skillsPayload === "") {
+        skillsPayload = null;
+      }
+
+      // 3. KIỂM TRA VALIDATION NGÀY THÁNG
       const startDateObj = values.startDate ? dayjs(values.startDate) : null;
       const dueDateObj = values.dueDate ? dayjs(values.dueDate) : null;
 
-      // 4. KIỂM TRA VALIDATION NGÀY THÁNG BẰNG JS (Sử dụng đối tượng Day.js)
       if (startDateObj && dueDateObj) {
         if (startDateObj.isSameOrAfter(dueDateObj)) {
           message.error("The Due Date must be later than the Start Date.");
           setLoading(false);
-          return;
+          return; // Dừng lại nếu validation thất bại
         }
       }
 
-      // Chuẩn bị Payload
+      // ==========================================================
+      // 💡 FIX CỐT LÕI: SỬ DỤNG DESTRUCTURING ĐỂ LOẠI BỎ requiredSkills GỐC
+      // ==========================================================
+      const {
+        requiredSkills, // Loại bỏ trường này khỏi values gốc
+        suggestedAssigneeId, // Loại bỏ trường này khỏi values gốc
+        startDate,
+        dueDate,
+        assigneeId,
+        ...rest // Lấy tất cả các trường còn lại (title, description, priority, progress, statusId...)
+      } = values;
+
       const payload = {
-        ...values,
+        // Gán các trường còn lại
+        ...rest,
         projectId,
-        // values.startDate/dueDate là Day.js object (hoặc null) từ Form.Item, 
-        // cần format sang ISO string cho backend
-        startDate: values.startDate ? values.startDate.toISOString() : null,
-        dueDate: values.dueDate ? values.dueDate.toISOString() : null,
-        assigneeId: values.assigneeId || null,
+
+        // Gán các trường đã được xử lý/chuẩn hóa
+        startDate: startDate ? startDate.toISOString() : null,
+        dueDate: dueDate ? dueDate.toISOString() : null,
+        assigneeId: assigneeId || null,
+
+        // GÁN CHẮC CHẮN GIÁ TRỊ ĐÃ XỬ LÝ (CHUỖI TEXT HOẶC null)
+        requiredSkills: skillsPayload,
+
+        // Gán giá trị mặc định cho suggestedAssigneeId
         suggestedAssigneeId: undefined,
       };
 
@@ -196,6 +248,8 @@ const TaskModal = ({
     }
   };
 
+  // ... (Các hàm khác: handleAddComment, getPriorityColor, handleSuggestAssignee, handleAcceptSuggestion, handleTaskUploadChange, handleTaskDeleteFile, taskUploadProps) ...
+  // [Phần còn lại của code (handleAddComment -> taskUploadProps) được giữ nguyên không thay đổi logic so với file bạn gửi]
   const handleAddComment = async () => {
     if (!newComment.trim()) return;
     setCommentLoading(true);
@@ -225,8 +279,8 @@ const TaskModal = ({
   };
 
   // --- AUTO ASSIGNMENT HANDLERS (Sử dụng form.getFieldValue) ---
-  // Dùng useWatch để re-render khi assigneeId thay đổi trong form
   const currentAssigneeId = Form.useWatch('assigneeId', form);
+  const currentRequiredSkills = Form.useWatch('requiredSkills', form);
   const suggestedAssignee = members.find(m => m.id === formData.suggestedAssigneeId);
 
   const handleSuggestAssignee = async () => {
@@ -260,7 +314,6 @@ const TaskModal = ({
 
   const handleAcceptSuggestion = () => {
     if (suggestedAssignee) {
-      // Cập nhật giá trị vào Form hook
       form.setFieldsValue({ assigneeId: suggestedAssignee.id });
       setFormData(prev => ({
         ...prev,
@@ -370,7 +423,6 @@ const TaskModal = ({
       <Row gutter={[24, 24]}>
         {/* Left Column (Main Info & Comments) */}
         <Col xs={24} md={16}>
-          {/* TITLE & DESCRIPTION: Đã chuyển sang quản lý bằng Form.Item */}
           <Form.Item
             label={<b>Title</b>}
             name="title"
@@ -440,7 +492,7 @@ const TaskModal = ({
                 <Select
                   placeholder="-- Unassigned --"
                   allowClear
-                  value={formData.assigneeId}
+                  value={currentAssigneeId}
                   onChange={(value) => {
                     form.setFieldsValue({ assigneeId: value });
                   }}>
@@ -494,6 +546,19 @@ const TaskModal = ({
             </Select>
           </Form.Item>
 
+          {/* REQUIRED SKILLS */}
+          <Form.Item label="Required Skills" name="requiredSkills">
+            <Select
+              mode="tags"
+              value={currentRequiredSkills}
+              style={{ width: '100%' }}
+              placeholder="Enter skills (e.g., React, Testing, DB Design)"
+              onChange={(value) => form.setFieldsValue({ requiredSkills: value })}
+            // Cho phép nhập tự do, không cần options
+            />
+            <p style={{ fontSize: '12px', color: '#999', marginTop: 5 }}>Enter skills separated by commas or pressing Enter.</p>
+          </Form.Item>
+
           <Divider />
 
           <Form.Item label="Start Date" name="startDate">
@@ -534,7 +599,6 @@ const TaskModal = ({
     {
       key: 'info',
       label: 'Task Details',
-      // Gọi TaskInfoTab trực tiếp
       children: <TaskInfoTab />,
     },
     ...(isEditMode ? [{
@@ -546,6 +610,7 @@ const TaskModal = ({
 
   return (
     <Modal
+      key={taskId}
       title={
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           {isEditMode ? <CheckCircleOutlined style={{ color: '#1890ff' }} /> : null}

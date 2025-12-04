@@ -55,7 +55,7 @@ exports.createTask = async (req, res) => {
         isAuthorized = true;
       }
     }
-    
+
     if (!isAuthorized) {
       return res
         .status(403)
@@ -190,6 +190,18 @@ exports.updateTask = async (req, res) => {
     if (!task) return res.status(404).send({ message: "Task not found." });
     const oldAssigneeId = task.assigneeId;
 
+    let skillsToSave = req.body.requiredSkills;
+
+    if (typeof skillsToSave === 'string') {
+        // 💡 FIX CỐT LÕI: Kiểm tra và loại bỏ dấu nháy kép ở hai đầu (Lỗi stringify kép)
+        if (skillsToSave.startsWith('"') && skillsToSave.endsWith('"')) {
+            skillsToSave = skillsToSave.substring(1, skillsToSave.length - 1);
+        }
+    } else {
+        // Nếu không phải chuỗi (null/undefined), giữ nguyên
+        skillsToSave = skillsToSave || null;
+    }
+
     const updatedData = {
       title: req.body.title,
       description: req.body.description,
@@ -199,13 +211,15 @@ exports.updateTask = async (req, res) => {
       startDate: req.body.startDate,
       dueDate: req.body.dueDate,
       progress: req.body.progress,
-      requiredSkills: req.body.requiredSkills,
+      requiredSkills: skillsToSave
     };
 
     // Xóa các field undefined/null (Không gửi lên body)
     Object.keys(updatedData).forEach((key) => {
-      if (updatedData[key] === undefined) delete updatedData[key];
-      // Nếu giá trị được gửi lên là null rõ ràng (ví dụ: xóa assignee) thì vẫn giữ lại
+      // Chỉ xóa nếu giá trị là UNDEFINED. Giữ lại NULL hoặc chuỗi rỗng ("") nếu Frontend gửi.
+      if (updatedData[key] === undefined) { 
+          delete updatedData[key];
+      }
     });
 
     await task.update(updatedData);
@@ -274,7 +288,7 @@ exports.updateTask = async (req, res) => {
         });
       }
     }
-    
+
     res.status(200).send(task);
   } catch (error) {
     res.status(500).send({ message: `Error updating task: ${error.message}` });
@@ -290,7 +304,7 @@ exports.updateTaskStatus = async (req, res) => {
     const task = await Task.findByPk(taskId);
 
     if (!task) return res.status(404).send({ message: "Task not found." });
-    
+
     // Ghi lại Status cũ
     const oldStatusId = task.statusId;
 
@@ -299,13 +313,13 @@ exports.updateTaskStatus = async (req, res) => {
 
     // 1. Logic Notification khi status thay đổi
     if (newStatusId !== oldStatusId && task.assigneeId && task.assigneeId !== updaterId) {
-        await Notification.create({
-            userId: task.assigneeId,
-            taskId: taskId,
-            message: `The status of your task "${task.title}" has been updated.`,
-            type: 'STATUS_CHANGE',
-            isRead: false
-        });
+      await Notification.create({
+        userId: task.assigneeId,
+        taskId: taskId,
+        message: `The status of your task "${task.title}" has been updated.`,
+        type: 'STATUS_CHANGE',
+        isRead: false
+      });
     }
 
     res.status(200).send(task);
@@ -369,30 +383,17 @@ exports.suggestTaskAssignment = async (req, res) => {
   const { taskId } = req.params;
 
   try {
-    // 1. Lấy thông tin Task (sửa lỗi cú pháp 'iinclude')
+    // 1. Lấy thông tin Task (Chỉ lấy các thuộc tính cần thiết)
     const task = await Task.findByPk(taskId, {
-      include: [
-        {
-          model: Project,
-          include: [
-            {
-              model: Team,
-              include: [{
-                model: User,
-                as: 'members',
-                attributes: ['id', 'name'], // Chỉ lấy các thuộc tính cần thiết
-              }]
-            }
-          ]
-        }
-      ]
+      attributes: ['id', 'projectId', 'requiredSkills', 'typeId'],
     });
 
     if (!task) return res.status(404).send({ message: "Task không tồn tại." });
 
-    // 2. Lấy tất cả thành viên của Project (Tối ưu truy vấn)
+    // 2. Lấy tất cả thành viên của Project (Lấy trường expertise mới)
     const membersInProject = await User.findAll({
-      attributes: ['id', 'name', 'assignmentRules', 'availability', 'currentTasks'],
+      // Lấy trường expertise, availability, và currentTasks
+      attributes: ['id', 'name', 'expertise', 'availability', 'currentTasks', 'assignmentRules'],
       include: [{
         model: db.teams,
         as: 'teams',
@@ -407,56 +408,102 @@ exports.suggestTaskAssignment = async (req, res) => {
     }
 
     let bestMatch = null;
-    let maxScore = -Infinity; // Đặt giá trị khởi tạo chính xác
+    let maxScore = -Infinity;
 
     // Chuẩn bị thuộc tính Task cần so sánh
+    // Chuyển chuỗi requiredSkills thành mảng các từ khóa (loại bỏ khoảng trắng, dấu phẩy)
     const taskSkills = (task.requiredSkills || '')
       .toLowerCase()
-      .split(',')
+      .split(/[\s,]+/) // Tách bằng dấu cách hoặc dấu phẩy
       .map(s => s.trim())
       .filter(s => s.length > 0);
+
     const taskTypeId = task.typeId;
 
-    // 3. CHẠY THUẬT NGHIỆM ĐÁNH GIÁ ĐIỂM
+    // 3. CHẠY THUẬT TOÁN ĐÁNH GIÁ ĐIỂM
     for (const member of membersInProject) {
-      const rules = member.assignmentRules;
+      const expertiseData = member.expertise; // Dữ liệu JSON về chuyên môn
       let currentScore = 0;
 
-      // Xử lý JSON string nếu cần thiết (An toàn hơn)
-      let memberRules;
+      // Xử lý JSON string của expertise
+      let memberExpertise;
       try {
-        memberRules = Array.isArray(rules)
-          ? rules
-          : (typeof rules === 'string' && rules ? JSON.parse(rules) : []);
+        memberExpertise = Array.isArray(expertiseData)
+          ? expertiseData
+          : (typeof expertiseData === 'string' && expertiseData ? JSON.parse(expertiseData) : []);
       } catch (e) {
-        console.error(`Error parsing rules for user ${member.id}:`, e);
-        memberRules = [];
+        // Nếu parsing lỗi, coi như không có expertise
+        memberExpertise = [];
       }
 
-      for (const rule of memberRules) {
-        // A. So sánh theo Skill 
-        if (rule.skill) {
-          const ruleSkillLower = rule.skill.toLowerCase();
-          if (taskSkills.some(ts => ts.includes(ruleSkillLower))) {
-            currentScore += 10;
+      // A. LOGIC ĐÁNH GIÁ CHUYÊN MÔN DỰA TRÊN `requiredSkills` và `expertise`
+      let skillMatchScore = 0; // Tổng điểm chuyên môn cho các skill khớp
+      let totalSkillsRequired = taskSkills.length;
+      let skillsMatchedCount = 0; // Đếm số lượng skill required khớp
+
+      if (totalSkillsRequired > 0) {
+
+        for (const requiredSkill of taskSkills) {
+          let bestSkillScore = 0;
+          let isMatched = false;
+
+          // Duyệt qua từng chuyên môn (expertise) mà Leader đã gán cho member
+          for (const expertise of memberExpertise) {
+            const expertiseNameLower = (expertise.name || '').toLowerCase();
+            const expertiseScore = Number(expertise.score) || 0;
+
+            // So sánh linh hoạt: Nếu skill required là một phần của expertise hoặc ngược lại
+            if (expertiseNameLower.includes(requiredSkill) || requiredSkill.includes(expertiseNameLower)) {
+              // Lấy điểm cao nhất nếu một requiredSkill khớp với nhiều expertise
+              bestSkillScore = Math.max(bestSkillScore, expertiseScore);
+              isMatched = true;
+            }
+          }
+
+          if (isMatched) {
+            skillMatchScore += bestSkillScore; // Cộng điểm chuyên môn (thang 10)
+            skillsMatchedCount++;
           }
         }
 
-        // B. So sánh theo Loại Task
-        if (rule.typeId && Number(rule.typeId) === taskTypeId) {
-          currentScore += 15;
-        }
+        // Tính điểm chuyên môn cuối cùng
+        if (skillsMatchedCount > 0) {
+          // Điểm cơ sở: Tổng điểm chuyên môn / Số skill khớp
+          const baseSkillScore = skillMatchScore / skillsMatchedCount;
 
-        // C. CỘNG ĐIỂM ƯU TIÊN
-        currentScore += (Number(rule.priority) || 0);
+          // Thưởng thêm cho tỉ lệ skill khớp (ví dụ: 100% khớp = *1.2)
+          const matchRatio = skillsMatchedCount / totalSkillsRequired;
+
+          // Trọng số Skill (Ví dụ: Thang điểm tối đa cho Skill là 40)
+          currentScore += baseSkillScore * 4; // Max 10 * 4 = 40 điểm
+          currentScore += matchRatio * 5; // Thưởng thêm 5 điểm cho tỉ lệ khớp cao
+
+        } else {
+          // Nếu Task yêu cầu Skills (totalSkillsRequired > 0) nhưng member không khớp
+          currentScore -= 20; // Trừ điểm nặng nếu không có bất kỳ skill nào
+        }
       }
 
-      // D. ĐIỀU CHỈNH ĐIỂM THEO TÌNH TRẠNG HIỆN TẠI 
+
+      // B. LOGIC ĐÁNH GIÁ LOẠI TASK (Sử dụng assignmentRules cũ nếu cần)
+      const memberRules = Array.isArray(member.assignmentRules)
+        ? member.assignmentRules
+        : (typeof member.assignmentRules === 'string' && member.assignmentRules ? JSON.parse(member.assignmentRules) : []);
+
+      for (const rule of memberRules) {
+        if (rule.typeId && Number(rule.typeId) === taskTypeId) {
+          currentScore += 15; // Cộng 15 điểm nếu khớp loại task
+          break;
+        }
+      }
+
+
+      // C. ĐIỀU CHỈNH ĐIỂM THEO TÌNH TRẠNG HIỆN TẠI (Sẵn có & Tải công việc)
       const memberAvailability = Number(member.availability) || 0.1;
       const memberCurrentTasks = Number(member.currentTasks) || 0;
 
       currentScore *= memberAvailability;
-      currentScore -= memberCurrentTasks * 0.5;
+      currentScore -= memberCurrentTasks * 1.0; // Tăng trọng số trừ điểm bận rộn lên 1.0
 
       // 4. TÌM NGƯỜỜI PHÙ HỢP NHẤT
       if (currentScore > maxScore) {
@@ -474,7 +521,7 @@ exports.suggestTaskAssignment = async (req, res) => {
 
       res.status(200).send({
         suggestedAssignee: { id: bestMatch.id, name: bestMatch.name, score: maxScore.toFixed(2) },
-        message: `Hệ thống gợi ý: ${bestMatch.name} (${maxScore.toFixed(2)} điểm).`
+        message: `Hệ thống gợi ý: ${bestMatch.name} (${maxScore.toFixed(2)} điểm) dựa trên chuyên môn và tình trạng hiện tại.`
       });
     } else {
       res.status(200).send({ message: "Không tìm thấy thành viên nào phù hợp với quy tắc đã thiết lập." });
@@ -514,7 +561,7 @@ exports.findAll = async (req, res) => {
     // 4. Tìm theo Assignee
     if (assigneeId) {
       // Đảm bảo assigneeId là số hoặc dùng Op.eq nếu cần so sánh nghiêm ngặt
-      condition.assigneeId = assigneeId; 
+      condition.assigneeId = assigneeId;
     }
 
     // 5. Tìm theo Hạn chót (Đến cuối ngày đó)

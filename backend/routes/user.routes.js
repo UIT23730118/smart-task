@@ -21,6 +21,13 @@ module.exports = function (app) {
         userController.updateAssignmentRules
     );
 
+    // Route để cập nhật chuyên môn (Yêu cầu quyền Leader hoặc Admin)
+  app.put(
+    "/api/users/:id/expertise",
+    [authJwt.verifyToken, authJwt.isLeader], // Sử dụng middleware kiểm tra quyền Leader
+    userController.updateUserExpertise
+  );
+
     // API Lấy Rules (Có thể dùng cho giao diện xem hồ sơ)
     // API: GET /api/users/:userId/rules
     app.get(

@@ -28,6 +28,10 @@ module.exports = (sequelize, Sequelize) => {
             type: Sequelize.FLOAT,
             defaultValue: 1.0
         },
+        expertise: {
+            type: Sequelize.JSON,
+            allowNull: true,
+        },
         assignmentRules: { // <--- Cột mới
             type: Sequelize.JSON,
             allowNull: true,
