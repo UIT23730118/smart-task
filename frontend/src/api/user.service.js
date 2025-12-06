@@ -1,7 +1,7 @@
 // /src/api/user.service.js (NEW FILE)
 
-import api from './api';
-import authHeader from '../auth/auth-header';
+import api from './axios';
+import authHeader from './auth.header';
 
 const getAssignmentRules = (userId) => {
     // API: GET /api/users/:userId/rules
@@ -15,14 +15,25 @@ const updateAssignmentRules = (userId, rules) => {
 };
 
 /**
+ * Lấy danh sách chuyên môn (expertise) hiện tại của một người dùng.
+ * API: GET /api/users/:userId/expertise
+ * @param {number} userId - ID của người dùng.
+ */
+const getUserExpertise = (userId) => {
+    return api.get(`/users/${userId}/expertise`, { headers: authHeader() });
+};
+
+/**
    * Cập nhật danh sách chuyên môn (expertise) cho một người dùng.
+   * API: PUT /api/users/:userId/expertise
    * @param {number} userId - ID của người dùng.
    * @param {Array<{name: string, score: number}>} expertiseData - Dữ liệu expertise.
    */
 const updateUserExpertise = (userId, expertiseData) => {
-    return axios.put(
-        `${BASE_API_URL}/users/${userId}/expertise`,
-        { expertise: expertiseData }, // Body phải chứa đối tượng { expertise: [...] }
+    // Sử dụng api.put và định dạng body đúng: { expertise: [...] }
+    return api.put(
+        `/users/${userId}/expertise`,
+        { expertise: expertiseData }, 
         { headers: authHeader() }
     );
 };
@@ -30,6 +41,7 @@ const updateUserExpertise = (userId, expertiseData) => {
 const UserService = {
     getAssignmentRules,
     updateAssignmentRules,
+    getUserExpertise,
     updateUserExpertise,
     // ... thêm các hàm quản lý user khác nếu cần
 };

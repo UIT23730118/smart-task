@@ -1,7 +1,7 @@
 // /routes/user.routes.js
 
 const userController = require('../controllers/user.controller');
-const authJwt = require('../middleware/authJwt'); 
+const authJwt = require('../middleware/authJwt');
 // Giả định bạn có middleware isLeader để kiểm tra vai trò
 
 module.exports = function (app) {
@@ -16,23 +16,29 @@ module.exports = function (app) {
     // API Cập nhật Rules (Chỉ Leader mới được phép)
     // API: PUT /api/users/:userId/rules
     app.put(
-        '/api/users/:userId/rules',
-        [authJwt.verifyToken, authJwt.isLeader], 
+        '/api/users/:id/rules',
+        [authJwt.verifyToken, authJwt.isLeader],
         userController.updateAssignmentRules
     );
 
     // Route để cập nhật chuyên môn (Yêu cầu quyền Leader hoặc Admin)
-  app.put(
-    "/api/users/:id/expertise",
-    [authJwt.verifyToken, authJwt.isLeader], // Sử dụng middleware kiểm tra quyền Leader
-    userController.updateUserExpertise
-  );
+    app.put(
+        "/api/users/:id/expertise",
+        [authJwt.verifyToken, authJwt.isLeader], // Sử dụng middleware kiểm tra quyền Leader
+        userController.updateUserExpertise
+    );
+
+    app.get(
+        "/api/users/:id/expertise",
+        [authJwt.verifyToken],
+        userController.getUserExpertise
+    );
 
     // API Lấy Rules (Có thể dùng cho giao diện xem hồ sơ)
     // API: GET /api/users/:userId/rules
     app.get(
-        '/api/users/:userId/rules',
-        [authJwt.verifyToken], 
+        '/api/users/:id/rules',
+        [authJwt.verifyToken],
         userController.getAssignmentRules
     );
 };

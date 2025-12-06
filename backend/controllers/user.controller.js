@@ -51,6 +51,28 @@ exports.updateAssignmentRules = async (req, res) => {
     }
 };
 
+exports.getUserExpertise = async (req, res) => {
+    const userId = req.params.id;
+    try {
+        const user = await User.findByPk(userId, {
+            attributes: ['id', 'name', 'expertise']
+        });
+        if (!user) return res.status(404).send({ message: "User not found." });
+        
+        // Đảm bảo expertise trả về là mảng rỗng nếu là null
+        const expertiseData = user.expertise || []; 
+
+        res.status(200).send({
+            id: user.id,
+            name: user.name,
+            expertise: expertiseData
+        });
+    } catch (error) {
+        console.error("Error getting user expertise:", error);
+        res.status(500).send({ message: "Server error fetching expertise." });
+    }
+};
+
 // Cập nhật chuyên môn (expertise) cho một người dùng
 exports.updateUserExpertise = async (req, res) => {
   try {
