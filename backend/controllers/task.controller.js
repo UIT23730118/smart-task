@@ -10,7 +10,6 @@ const Project = db.projects;
 const Team = db.teams;
 const Resolution = db.resolutions;
 const Notification = db.notifications;
-const emailService = require('../services/email.service');
 
 // Tạo một Task mới
 exports.createTask = async (req, res) => {
@@ -95,17 +94,6 @@ exports.createTask = async (req, res) => {
     });
 
     // 4. Gửi Email thông báo phân công
-    if (task.assigneeId) {
-      const assignee = await User.findByPk(task.assigneeId, { attributes: ['name', 'email'] });
-      if (assignee && assignee.email) {
-        emailService.sendAssignmentEmail(
-          assignee.email,
-          assignee.name,
-          task.title,
-          task.id
-        );
-      }
-    }
 
     // 5. Tạo Thông báo (Notifications)
     const project = await Project.findByPk(projectId);
@@ -226,18 +214,6 @@ exports.updateTask = async (req, res) => {
     const newAssigneeId = task.assigneeId;
 
     // 1. GỬI EMAIL: Chỉ gửi khi ID thay đổi và người mới được gán không phải là null
-    if (newAssigneeId && newAssigneeId !== oldAssigneeId) {
-      const assignee = await User.findByPk(newAssigneeId, { attributes: ['name', 'email'] });
-
-      if (assignee && assignee.email) {
-        emailService.sendAssignmentEmail(
-          assignee.email,
-          assignee.name,
-          task.title,
-          taskId
-        );
-      }
-    }
 
     // 2. LOGIC THÔNG BÁO UPDATE
     const project = await Project.findByPk(task.projectId);

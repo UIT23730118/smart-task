@@ -99,4 +99,10 @@ db.comments.belongsTo(db.tasks, {
 db.users.hasMany(db.comments, { foreignKey: 'userId', as: 'userComments' });
 db.comments.belongsTo(db.users, { foreignKey: 'userId', as: 'author' });
 
+db.tasks.hasMany(db.notifications, { foreignKey: 'taskId', onDelete: 'CASCADE' });
+db.notifications.belongsTo(db.tasks, {
+  foreignKey: 'taskId',
+  as: 'task'
+});
+
 module.exports = db;

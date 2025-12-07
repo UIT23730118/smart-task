@@ -2,7 +2,7 @@
 module.exports = {
     HOST: 'localhost',
     USER: 'root', // User MySQL của bạn
-    PASSWORD: '123456', // Password MySQL của bạn
+    PASSWORD: '12345678', // Password MySQL của bạn
     DB: 'smart_task_db', // Tên database từ file SQL
     dialect: 'mysql',
     pool: {

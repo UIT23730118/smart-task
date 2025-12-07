@@ -5,21 +5,29 @@ module.exports = (sequelize, Sequelize) => {
             type: Sequelize.INTEGER,
             allowNull: false
         },
+        taskId: {
+            type: Sequelize.INTEGER,
+            allowNull: true // Thông báo hệ thống có thể không cần taskId
+        },
+        // --- BỔ SUNG TRƯỜNG TYPE ---
+        type: {
+            type: Sequelize.STRING, // Lưu các giá trị như: 'CREATE_TASK', 'ASSIGNMENT', v.v.
+            allowNull: true
+        },
+        // ---------------------------
         message: {
             type: Sequelize.TEXT
         },
         meta: {
-            type: Sequelize.JSON // (VD: { "taskId": 12 })
+            type: Sequelize.JSON
         },
         isRead: {
             type: Sequelize.BOOLEAN,
             defaultValue: false
         }
     }, {
-        // --- THÊM PHẦN NÀY ĐỂ ÁNH XẠ TIMESTAMPS ---
-        timestamps: true,      // Báo cho Sequelize biết bảng này CÓ timestamp
-        updatedAt: false     // Báo rằng chúng ta KHÔNG dùng cột 'updatedAt'
-        // --- KẾT THÚC PHẦN THÊM ---
+        timestamps: true,
+        updatedAt: false
     });
 
     return Notification;
