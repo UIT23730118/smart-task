@@ -12,7 +12,7 @@ import {
     SunOutlined,
     MoonOutlined,
 } from '@ant-design/icons';
-import NotificationBell from '../NotificationBell';
+import NotificationBell from '../Notifications/NotificationBell';
 
 const { Header, Content, Footer, Sider } = Layout;
 

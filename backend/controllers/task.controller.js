@@ -10,7 +10,6 @@ const Project = db.projects;
 const Team = db.teams;
 const Resolution = db.resolutions;
 const Notification = db.notifications;
-const emailService = require('../services/email.service');
 
 // Tạo một Task mới
 exports.createTask = async (req, res) => {
@@ -27,6 +26,7 @@ exports.createTask = async (req, res) => {
       startDate,
       progress,
       requiredSkills,
+      workloadWeight,
     } = req.body;
 
     // 1. Kiểm tra quyền (User là Member trong Team hoặc là Leader của Project)
@@ -92,20 +92,8 @@ exports.createTask = async (req, res) => {
       dueDate: dueDate || null,
       progress: progress || 0,
       requiredSkills: requiredSkills || null,
+      workloadWeight: Number(workloadWeight) || 1,
     });
-
-    // 4. Gửi Email thông báo phân công
-    if (task.assigneeId) {
-      const assignee = await User.findByPk(task.assigneeId, { attributes: ['name', 'email'] });
-      if (assignee && assignee.email) {
-        emailService.sendAssignmentEmail(
-          assignee.email,
-          assignee.name,
-          task.title,
-          task.id
-        );
-      }
-    }
 
     // 5. Tạo Thông báo (Notifications)
     const project = await Project.findByPk(projectId);
@@ -149,7 +137,7 @@ exports.getTaskDetails = async (req, res) => {
         { model: Project, attributes: ["id", "name"] },
         { model: User, as: "assignee", attributes: ["id", "name", "email"] },
         { model: User, as: "reporter", attributes: ["id", "name", "email"] },
-        { model: Status, attributes: ["id", "name", "color"] },
+        { model: Status, as: "status", attributes: ["id", "name", "color"] },
         { model: IssueType, as: "type", attributes: ["id", "name"] },
         { model: Resolution, attributes: ["id", "name"] },
         // Lấy Comments và thông tin người comment
@@ -193,13 +181,13 @@ exports.updateTask = async (req, res) => {
     let skillsToSave = req.body.requiredSkills;
 
     if (typeof skillsToSave === 'string') {
-        // 💡 FIX CỐT LÕI: Kiểm tra và loại bỏ dấu nháy kép ở hai đầu (Lỗi stringify kép)
-        if (skillsToSave.startsWith('"') && skillsToSave.endsWith('"')) {
-            skillsToSave = skillsToSave.substring(1, skillsToSave.length - 1);
-        }
+      // 💡 FIX CỐT LÕI: Kiểm tra và loại bỏ dấu nháy kép ở hai đầu (Lỗi stringify kép)
+      if (skillsToSave.startsWith('"') && skillsToSave.endsWith('"')) {
+        skillsToSave = skillsToSave.substring(1, skillsToSave.length - 1);
+      }
     } else {
-        // Nếu không phải chuỗi (null/undefined), giữ nguyên
-        skillsToSave = skillsToSave || null;
+      // Nếu không phải chuỗi (null/undefined), giữ nguyên
+      skillsToSave = skillsToSave || null;
     }
 
     const updatedData = {
@@ -211,33 +199,20 @@ exports.updateTask = async (req, res) => {
       startDate: req.body.startDate,
       dueDate: req.body.dueDate,
       progress: req.body.progress,
-      requiredSkills: skillsToSave
+      requiredSkills: skillsToSave,
+      workloadWeight: req.body.workloadWeight,
     };
 
     // Xóa các field undefined/null (Không gửi lên body)
     Object.keys(updatedData).forEach((key) => {
       // Chỉ xóa nếu giá trị là UNDEFINED. Giữ lại NULL hoặc chuỗi rỗng ("") nếu Frontend gửi.
-      if (updatedData[key] === undefined) { 
-          delete updatedData[key];
+      if (updatedData[key] === undefined) {
+        delete updatedData[key];
       }
     });
 
     await task.update(updatedData);
     const newAssigneeId = task.assigneeId;
-
-    // 1. GỬI EMAIL: Chỉ gửi khi ID thay đổi và người mới được gán không phải là null
-    if (newAssigneeId && newAssigneeId !== oldAssigneeId) {
-      const assignee = await User.findByPk(newAssigneeId, { attributes: ['name', 'email'] });
-
-      if (assignee && assignee.email) {
-        emailService.sendAssignmentEmail(
-          assignee.email,
-          assignee.name,
-          task.title,
-          taskId
-        );
-      }
-    }
 
     // 2. LOGIC THÔNG BÁO UPDATE
     const project = await Project.findByPk(task.projectId);
@@ -581,7 +556,7 @@ exports.findAll = async (req, res) => {
       where: condition,
       include: [
         { model: User, as: "assignee", attributes: ["id", "name"] },
-        { model: Status, attributes: ["id", "name", "color"] },
+        { model: Status, as: "status", attributes: ["id", "name", "color"] },
         { model: IssueType, as: "type", attributes: ["id", "name"] }
       ],
       order: [['createdAt', 'DESC']]

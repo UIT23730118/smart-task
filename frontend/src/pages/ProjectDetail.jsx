@@ -20,10 +20,10 @@ import TaskCard from "../components/Task/TaskCard";
 import TaskModal from "../components/Task/TaskModal";
 import TaskListView from "../components/Project/TaskListView";
 // Đã thay thế FilterBar bằng TaskFilter
-import TaskFilter from "../components/Task/TaskFilter"; 
+import TaskFilter from "../components/Task/TaskFilter";
 import { useAuth } from "../context/AuthContext";
-
-import { FaUsersCog, FaRegListAlt } from "react-icons/fa";
+import ProjectSettingsModal from '../components/Project/ProjectSettingsModal';
+import { FaUsersCog, FaRegListAlt, FaCog } from "react-icons/fa"; // Thêm FaCog
 
 const { Dragger } = Upload;
 
@@ -37,7 +37,7 @@ const ProjectDetail = () => {
 
   // Filter & View state
   // Đã thay thế searchTerm và filterAssignee bằng một object filters
-  const [filters, setFilters] = useState({}); 
+  const [filters, setFilters] = useState({});
   const [viewMode, setViewMode] = useState("list");
 
   // Task modal state
@@ -46,13 +46,15 @@ const ProjectDetail = () => {
 
   // Project attachment state
   const [fileList, setFileList] = useState([]);
+  // 💡 Project Settings Modal state
+  const [isSettingsModalVisible, setIsSettingsModalVisible] = useState(false);
 
   // --- FILTER HANDLER ---
   const handleFilterChange = (newFilters) => {
     // Cập nhật state filters khi TaskFilter trả về giá trị
     setFilters(newFilters);
   };
-  
+
   const fetchProjectAttachments = async () => {
     if (!projectId) return;
     try {
@@ -80,6 +82,11 @@ const ProjectDetail = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  // 💡 HÀM REFRESH DỮ LIỆU SAU KHI SETTINGS THAY ĐỔI
+  const handleProjectDataRefresh = () => {
+    fetchProjectData();
   };
 
   useEffect(() => {
@@ -209,6 +216,9 @@ const ProjectDetail = () => {
   if (error) return <div className="alert alert-danger m-4">{error}</div>;
   if (!projectData) return <div className="p-4">Project not found.</div>;
 
+  // 💡 KIỂM TRA QUYỀN LEADER CỦA DỰ ÁN
+  const isProjectLeader = user.role === "leader" && user.id === projectData.leaderId;
+
   // Progress calculation
   const totalTasks = projectData.tasks.length;
   const maxPosition = Math.max(...projectData.statuses.map((s) => s.position));
@@ -231,31 +241,31 @@ const ProjectDetail = () => {
   // Áp dụng logic lọc mới từ state filters
   const filteredTasks = projectData.tasks.filter((task) => {
     let matches = true;
-    
+
     // Lọc theo Key/Summary (key)
     if (filters.key) {
-        const key = filters.key.toLowerCase();
-        // Giả sử key filter tìm kiếm trong title và description
-        matches = matches && (task.title.toLowerCase().includes(key) || (task.description && task.description.toLowerCase().includes(key)));
+      const key = filters.key.toLowerCase();
+      // Giả sử key filter tìm kiếm trong title và description
+      matches = matches && (task.title.toLowerCase().includes(key) || (task.description && task.description.toLowerCase().includes(key)));
     }
-    
+
     // Lọc theo Priority
-    if (filters.priority) {
-        matches = matches && (task.priority === filters.priority);
+    if (filters.priority && filters.priority !== 'All') { // 💡 Bổ sung check 'All'
+      matches = matches && (task.priority === filters.priority);
     }
-    
+
     // Lọc theo Assignee ID
     if (filters.assigneeId) {
-        // filters.assigneeId là số (number) hoặc undefined.
-        // Chú ý: task.assigneeId có thể là null, cần kiểm tra an toàn.
-        matches = matches && (task.assigneeId === Number(filters.assigneeId));
+      // filters.assigneeId là số (number) hoặc undefined.
+      // Chú ý: task.assigneeId có thể là null, cần kiểm tra an toàn.
+      matches = matches && (task.assigneeId === Number(filters.assigneeId));
     }
-    
+
     // Lọc theo Due Date (filters.dueDate là YYYY-MM-DD)
     if (filters.dueDate) {
-        // Lấy phần ngày tháng (YYYY-MM-DD) từ task.dueDate (ISO string)
-        const taskDueDate = task.dueDate ? task.dueDate.split('T')[0] : null; 
-        matches = matches && (taskDueDate === filters.dueDate);
+      // Lấy phần ngày tháng (YYYY-MM-DD) từ task.dueDate (ISO string)
+      const taskDueDate = task.dueDate ? task.dueDate.split('T')[0] : null;
+      matches = matches && (taskDueDate === filters.dueDate);
     }
 
     return matches;
@@ -271,18 +281,18 @@ const ProjectDetail = () => {
 
       {/* Điều chỉnh: Hợp nhất TaskFilter và các nút điều khiển vào cùng một hàng flex */}
       {/* 1. TaskFilter (Form lọc chính, đã được điều chỉnh căn chỉnh Form.Item) */}
-      <div style={{ marginBottom: 15 }}> 
+      <div style={{ marginBottom: 15 }}>
         <TaskFilter
-            onSearch={handleFilterChange}
-            projectData={projectData}
+          onSearch={handleFilterChange}
+          projectData={projectData}
         />
       </div>
 
 
       {/* 2. Control Bar (View Switcher & Create Button) - Đặt ngay dưới Form Filter */}
-      <div 
-          className="flex justify-end items-center mb-4" 
-          style={{ display: 'flex', flexDirection: "row-reverse", justifyContent: 'flex-end', alignItems: 'center', gap: 10 }}
+      <div
+        className="flex justify-end items-center mb-4"
+        style={{ display: 'flex', flexDirection: "row-reverse", justifyContent: 'flex-end', alignItems: 'center', gap: 10 }}
       >
         <Segmented
           value={viewMode}
@@ -294,11 +304,11 @@ const ProjectDetail = () => {
           className="view-switcher"
         />
 
-        <Button 
-          type="primary" 
-          icon={<PlusOutlined />} 
+        <Button
+          type="primary"
+          icon={<PlusOutlined />}
           onClick={openCreateTaskModal}
-          //className="btn btn-primary"
+        //className="btn btn-primary"
         >
           Create Task
         </Button>
@@ -401,11 +411,27 @@ const ProjectDetail = () => {
         <div>
           <h1 style={{ fontSize: "28px", marginBottom: "5px" }}>{projectData.name}</h1>
           <p style={{ color: "#666", margin: 0 }}>{projectData.description || "No description"}</p>
+
+          {/* 💡 BỔ SUNG: HIỂN THỊ WORKLOAD FACTOR */}
+          <p style={{ color: "#000", fontWeight: 'bold', marginTop: '5px' }}>
+            Workload Factor: <span style={{ color: '#1890ff' }}>{projectData.workloadFactor ? projectData.workloadFactor.toFixed(1) : '1.0'}x</span>
+          </p>
         </div>
 
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
 
-          {user.role === "leader" && (
+          {/* 💡 BỔ SUNG: NÚT PROJECT SETTINGS (CHO LEADER) */}
+          {isProjectLeader && (
+            <Button
+              icon={<FaCog />}
+              type="default"
+              onClick={() => setIsSettingsModalVisible(true)} // Mở modal
+            >
+              Project Settings
+            </Button>
+          )}
+
+          {isProjectLeader && (
             <Button
               icon={<BarChartOutlined />}
               type="default"
@@ -415,13 +441,13 @@ const ProjectDetail = () => {
             </Button>
           )}
 
-          {user.role === "leader" && (
+          {isProjectLeader && (
             <Link to={`/team-management/${projectId}`} style={{ textDecoration: 'none' }}>
               <Button icon={<FaUsersCog />}> Team Management </Button>
             </Link>
           )}
 
-          {user.role === "leader" && (
+          {isProjectLeader && (
             <Link to={`/project-rules/${projectId}`} style={{ textDecoration: 'none' }}>
               <Button icon={<FaRegListAlt />} type="primary"> Assignment Rules </Button>
             </Link>
@@ -440,6 +466,16 @@ const ProjectDetail = () => {
           onClose={closeTaskModal}
           onTaskChanged={handleTaskSaved}
           onTaskRefreshed={handleTaskDataRefresh}
+        />
+      )}
+
+      {/* 💡 BỔ SUNG: RENDER PROJECT SETTINGS MODAL */}
+      {isSettingsModalVisible && (
+        <ProjectSettingsModal
+          visible={isSettingsModalVisible}
+          onCancel={() => setIsSettingsModalVisible(false)}
+          project={projectData}
+          onUpdated={handleProjectDataRefresh} // Gọi lại hàm fetchProjectData để lấy workloadFactor mới
         />
       )}
     </div>

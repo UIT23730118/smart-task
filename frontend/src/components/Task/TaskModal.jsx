@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   Modal, Form, Input, Select, DatePicker, Slider,
   Button, Row, Col, Avatar, List, message, Tag, Divider,
-  Tabs, Upload, Popconfirm
+  Tabs, Upload, Popconfirm, InputNumber
 } from "antd";
 import {
   UserOutlined, SendOutlined,
@@ -123,7 +123,8 @@ const TaskModal = ({
             startDate: t.startDate ? dayjs(t.startDate) : null,
             dueDate: t.dueDate ? dayjs(t.dueDate) : null,
             progress: t.progress || 0,
-            requiredSkills: requiredSkillsArray // PHẢI LÀ MẢNG
+            requiredSkills: requiredSkillsArray, // PHẢI LÀ MẢNG
+            workloadWeight: t.workloadWeight || 1,
           });
 
           // Cập nhật state phụ
@@ -145,6 +146,7 @@ const TaskModal = ({
         statusId: statuses.length > 0 ? statuses[0].id : undefined,
         priority: "Minor",
         progress: 0,
+        workloadWeight: 1,
       };
       form.setFieldsValue(defaultValues);
       setFormData(prev => ({ ...prev, suggestedAssigneeId: undefined }));
@@ -557,6 +559,19 @@ const TaskModal = ({
             // Cho phép nhập tự do, không cần options
             />
             <p style={{ fontSize: '12px', color: '#999', marginTop: 5 }}>Enter skills separated by commas or pressing Enter.</p>
+          </Form.Item>
+
+          <Form.Item label="Workload Weight (Point(s))" 
+             tooltip="Đánh giá độ phức tạp/thời gian của Task này (Thang 1-10)"
+             name="workloadWeight" // Gán name ở đây
+             rules={[{ required: true, message: 'Nhập trọng số' }]}
+          >
+            <InputNumber
+              min={1}
+              max={10}
+              style={{ width: '100%' }}
+              onChange={(value) => form.setFieldsValue({ workloadWeight: value })}
+            />
           </Form.Item>
 
           <Divider />

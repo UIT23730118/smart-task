@@ -1,10 +1,15 @@
-// /src/pages/Projects.jsx
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import ProjectService from '../api/project.service';
+
+// Ant Design
+import { Typography, Button, Row, Col, Spin, Result, Empty, message } from 'antd';
+import { PlusOutlined, FolderOpenOutlined } from '@ant-design/icons';
+
 import ProjectCard from '../components/Project/ProjectCard';
 import CreateProjectModal from '../components/Project/CreateProjectModal';
-import { FaFolderOpen } from 'react-icons/fa';
+
+const { Title, Text } = Typography;
 
 const Projects = () => {
     const { user } = useAuth();
@@ -20,6 +25,7 @@ const Projects = () => {
             setProjects(response.data);
         } catch (err) {
             setError('Failed to fetch projects.');
+            message.error('Failed to load projects.');
         } finally {
             setLoading(false);
         }
@@ -30,50 +36,70 @@ const Projects = () => {
     }, []);
 
     const handleProjectCreated = () => {
-        fetchProjects(); // Tải lại danh sách project
+        fetchProjects(); // Reload project list
     };
 
     return (
-        <>
-            <div className="page-header">
-                <div>
-                    <h1>Projects</h1>
-                    <p>Manage and track all your projects</p>
-                </div>
-                <div>
-                    {user.role === 'leader' && (
-                        <button className="btn btn-primary" onClick={() => setIsModalOpen(true)}>
-                            + New Project
-                        </button>
-                    )}
-                </div>
-            </div>
+        <div style={{ padding: '24px', fontFamily: 'sans-serif' }}>
+            {/* Header */}
+            <Row justify="space-between" align="middle" style={{ marginBottom: 24 }}>
+                <Col>
+                    <Title level={2} style={{ margin: 0 }}>Projects</Title>
+                    <Text type="secondary">Manage and track all your projects</Text>
+                </Col>
 
+                <Col>
+                    {user.role === 'leader' && (
+                        <Button
+                            type="primary"
+                            icon={<PlusOutlined />}
+                            onClick={() => setIsModalOpen(true)}
+                        >
+                            New Project
+                        </Button>
+                    )}
+                </Col>
+            </Row>
+
+            {/* Content */}
             {loading ? (
-                <p>Loading projects...</p>
+                <Spin size="large" style={{ display: 'block', marginTop: 50 }} />
             ) : error ? (
-                <div className="alert alert-danger">{error}</div>
+                <Result
+                    status="error"
+                    title="Error loading projects"
+                    subTitle={error}
+                />
             ) : projects.length > 0 ? (
-                <div className="projects-list">
+                <Row gutter={[24, 24]}>
                     {projects.map((project) => (
-                        <ProjectCard key={project.id} project={project} />
+                        <Col xs={24} sm={12} md={8} lg={6} key={project.id}>
+                            <ProjectCard project={project} />
+                        </Col>
                     ))}
-                </div>
+                </Row>
             ) : (
-                <div className="empty-state" style={{ background: 'white', padding: '50px', borderRadius: '8px', textAlign: 'center' }}>
-                    <FaFolderOpen size={40} color="#ccc" />
-                    <h3 style={{ marginTop: '15px' }}>No projects yet</h3>
-                    <p style={{ color: '#666' }}>Create your first project to get started</p>
+                <div style={{ padding: 40 }}>
+                    <Empty
+                        description={
+                            <span style={{ fontSize: 16 }}>
+                                No projects yet
+                            </span>
+                        }
+                        image={<FolderOpenOutlined style={{ fontSize: 48, color: '#ccc' }} />}
+                    />
+                    <Text type="secondary">Create your first project to get started</Text>
                 </div>
             )}
 
+            {/* Modal */}
             {isModalOpen && (
                 <CreateProjectModal
                     onClose={() => setIsModalOpen(false)}
                     onProjectCreated={handleProjectCreated}
                 />
             )}
-        </>
+        </div>
     );
 };
 

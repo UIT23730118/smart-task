@@ -182,3 +182,51 @@ exports.removeMember = async (req, res) => {
 		res.status(500).send({ message: error.message });
 	}
 };
+
+exports.updateProject = async (req, res) => {
+    const projectId = req.params.id;
+    // Lấy các trường cần cập nhật, bao gồm workloadFactor
+    const { name, description, endDate, workloadFactor } = req.body; 
+
+    // 💡 GIẢ ĐỊNH: Bạn có một middleware kiểm tra người dùng hiện tại (req.userId)
+    // có phải là leader của project này không. Nếu không, cần thêm logic kiểm tra ở đây.
+
+    try {
+        const project = await Project.findByPk(projectId);
+        if (!project) {
+            return res.status(404).send({ message: "Project not found." });
+        }
+        
+        // 💡 Giả định kiểm tra quyền Leader ở đây (hoặc dùng middleware)
+        if (project.leaderId !== req.userId) {
+             return res.status(403).send({ message: "Access denied. Only the project leader can update project details." });
+        }
+
+        const updateData = {
+            name: name,
+            description: description,
+            endDate: endDate || null,
+            
+            // 💡 Cập nhật workloadFactor, đảm bảo nó là số và nằm trong phạm vi an toàn (ví dụ: 0.1 - 2.0)
+            ...(typeof workloadFactor !== 'undefined' && { 
+                workloadFactor: Math.min(2.0, Math.max(0.1, Number(workloadFactor))) 
+            })
+        };
+
+        const [updated] = await Project.update(updateData, { where: { id: projectId } });
+
+        if (updated) {
+            const updatedProject = await Project.findByPk(projectId);
+            return res.status(200).send({
+                message: "Project updated successfully.",
+                project: updatedProject
+            });
+        } else {
+            // Không có gì thay đổi hoặc không tìm thấy
+            return res.status(200).send({ message: "Project retrieved, but no changes were applied." });
+        }
+    } catch (error) {
+        console.error("Error updating project:", error);
+        res.status(500).send({ message: error.message || "Server error while updating project." });
+    }
+};

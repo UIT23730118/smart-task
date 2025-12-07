@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Badge, Popover, List, Button, Typography, Tabs, Empty } from 'antd';
 import { BellOutlined, CheckCircleOutlined } from '@ant-design/icons';
-import NotificationService from '../api/notification.service';
+import axios from 'axios'; // <--- Chỉ cần import axios trực tiếp
 
 const { Text } = Typography;
 
@@ -10,40 +10,55 @@ const NotificationBell = () => {
     const [notifications, setNotifications] = useState([]);
     const [unreadCount, setUnreadCount] = useState(0);
     const [loading, setLoading] = useState(false);
-    // const navigate = useNavigate();
 
+    // --- CẤU HÌNH API TRỰC TIẾP TẠI ĐÂY ---
+    const API_URL = "http://localhost:8080/api/notifications";
+
+    // Hàm lấy Header chứa Token xác thực
+    const getAuthHeader = () => {
+        const user = JSON.parse(localStorage.getItem("user"));
+        return user && user.accessToken ? { "Authorization": "Bearer " + user.accessToken } : {};
+    };
+
+    // 1. Hàm gọi API lấy danh sách
     const fetchNotifications = async () => {
         setLoading(true);
         try {
-            const res = await NotificationService.getNotifications();
+            // Gọi trực tiếp bằng axios thay vì qua Service
+            const res = await axios.get(API_URL, { headers: getAuthHeader() });
+
             setNotifications(res.data);
             setUnreadCount(res.data.filter(n => !n.isRead).length);
         } catch (error) {
-            console.error("Failed to fetch notifications:", error);
+            console.error("Lỗi lấy thông báo:", error);
         } finally {
             setLoading(false);
         }
     };
 
-    useEffect(() => {
-        fetchNotifications();
-        const interval = setInterval(fetchNotifications, 60000); // Tự động check mỗi 1 phút
-        return () => clearInterval(interval);
-    }, []);
-
+    // 2. Hàm gọi API đánh dấu đã đọc
     const handleMarkAsRead = async (id) => {
         try {
-            await NotificationService.markAsRead(id);
+            await axios.put(`${API_URL}/${id}/read`, {}, { headers: getAuthHeader() });
+
+            // Cập nhật giao diện ngay lập tức
             setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
             setUnreadCount(prev => Math.max(0, prev - 1));
         } catch (error) {
-            console.error(error);
+            console.error("Lỗi đánh dấu đã đọc:", error);
         }
     };
 
-    // Component render danh sách (tái sử dụng cho các Tab)
+    useEffect(() => {
+        fetchNotifications();
+        // Tự động check tin mới mỗi 60 giây
+        const interval = setInterval(fetchNotifications, 60000);
+        return () => clearInterval(interval);
+    }, []);
+
+    // --- PHẦN GIAO DIỆN GIỮ NGUYÊN NHƯ CŨ ---
     const NotificationList = ({ data }) => {
-        if (data.length === 0) return <Empty description="No Notification" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
+        if (data.length === 0) return <Empty description="No new notifications" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
 
         return (
             <List
@@ -56,12 +71,12 @@ const NotificationBell = () => {
                                     type="text"
                                     icon={<CheckCircleOutlined />}
                                     onClick={() => handleMarkAsRead(item.id)}
-                                    title="Mark as read"
+                                    title="Đánh dấu đã đọc"
                                 />
                             )
                         ]}
                         style={{
-                            background: item.isRead ? '#fff' : '#e6f7ff', // Xanh nhạt nếu chưa đọc
+                            background: item.isRead ? '#fff' : '#e6f7ff',
                             padding: '10px 15px',
                             cursor: 'pointer',
                             borderBottom: '1px solid #f0f0f0'
@@ -70,12 +85,14 @@ const NotificationBell = () => {
                         <List.Item.Meta
                             title={
                                 <Text style={{ fontSize: '13px', fontWeight: item.isRead ? 'normal' : 'bold' }}>
+                                    {/* Hiện tên Task nếu có */}
+                                    {item.task ? `[${item.task.title}] ` : ''}
                                     {item.message}
                                 </Text>
                             }
                             description={
                                 <Text type="secondary" style={{ fontSize: '11px' }}>
-                                    {new Date(item.createdAt).toLocaleString('en-US')}
+                                    {new Date(item.createdAt).toLocaleString('vi-VN')}
                                 </Text>
                             }
                         />
@@ -86,11 +103,10 @@ const NotificationBell = () => {
         );
     };
 
-    // Nội dung Tabs
     const popoverContent = (
         <div style={{ width: 350 }}>
             <Tabs defaultActiveKey="1" centered>
-                <Tabs.TabPane tab={`Unread (${unreadCount})`} key="1">
+                <Tabs.TabPane tab={`Not read (${unreadCount})`} key="1">
                     <NotificationList data={notifications.filter(n => !n.isRead)} />
                 </Tabs.TabPane>
                 <Tabs.TabPane tab="All" key="2">
@@ -105,10 +121,11 @@ const NotificationBell = () => {
             content={popoverContent}
             trigger="click"
             placement="bottomRight"
-            overlayInnerStyle={{ padding: 0 }} // Xóa padding mặc định của Popover để Tab đẹp hơn
+            overlayInnerStyle={{ padding: 0 }}
         >
             <Badge count={unreadCount} overflowCount={99} size="small">
-                <BellOutlined style={{ fontSize: '20px', color: 'var(--text-color)', cursor: 'pointer' }} />
+                {/* Đổi màu icon thành đen để dễ nhìn nếu chưa có biến CSS */}
+                <BellOutlined style={{ fontSize: '20px', color: '#000', cursor: 'pointer' }} />
             </Badge>
         </Popover>
     );

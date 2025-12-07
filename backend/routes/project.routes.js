@@ -47,4 +47,10 @@ module.exports = function (app) {
         [authJwt.verifyToken, authJwt.isLeader], // (Nên thêm check isProjectLeader)
         controller.removeMember
     );
+
+    app.put(
+        '/api/projects/:id',
+        [authJwt.verifyToken, authJwt.isLeader], // Tốt nhất nên dùng authJwt.isProjectLeader
+        controller.updateProject
+    );
 };

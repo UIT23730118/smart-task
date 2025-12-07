@@ -24,13 +24,18 @@ module.exports = (sequelize, Sequelize) => {
 		typeId: { type: Sequelize.INTEGER },
 		resolutionId: { type: Sequelize.INTEGER },
 		suggestedAssigneeId: { // Cột mới
-            type: Sequelize.INTEGER,
-            allowNull: true,
-        },
-        subtasksTemplate: { // Cột mới
-            type: Sequelize.JSON,
-            allowNull: true,
-        },
+			type: Sequelize.INTEGER,
+			allowNull: true,
+		},
+		subtasksTemplate: { // Cột mới
+			type: Sequelize.JSON,
+			allowNull: true,
+		},
+		workloadWeight: {
+			type: Sequelize.INTEGER,
+			defaultValue: 1, // Mặc định là 1 (min)
+			allowNull: false
+		},
 	});
 	return Task;
 };
