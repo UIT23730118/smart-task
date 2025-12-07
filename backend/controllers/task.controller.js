@@ -26,6 +26,7 @@ exports.createTask = async (req, res) => {
       startDate,
       progress,
       requiredSkills,
+      subtasksTemplate,
     } = req.body;
 
     // 1. Kiểm tra quyền (User là Member trong Team hoặc là Leader của Project)
@@ -91,6 +92,7 @@ exports.createTask = async (req, res) => {
       dueDate: dueDate || null,
       progress: progress || 0,
       requiredSkills: requiredSkills || null,
+      subtasksTemplate: subtasksTemplate || [],
     });
 
     // 4. Gửi Email thông báo phân công
@@ -199,7 +201,8 @@ exports.updateTask = async (req, res) => {
       startDate: req.body.startDate,
       dueDate: req.body.dueDate,
       progress: req.body.progress,
-      requiredSkills: skillsToSave
+      requiredSkills: skillsToSave,
+      subtasksTemplate: req.body.subtasksTemplate,
     };
 
     // Xóa các field undefined/null (Không gửi lên body)

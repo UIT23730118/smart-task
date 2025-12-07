@@ -2,58 +2,49 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   Modal, Form, Input, Select, DatePicker, Slider,
   Button, Row, Col, Avatar, List, message, Tag, Divider,
-  Tabs, Upload, Popconfirm
+  Tabs, Upload, Popconfirm, Checkbox, Typography
 } from "antd";
 import {
-  UserOutlined, SendOutlined,
-  CheckCircleOutlined, PaperClipOutlined,
   InboxOutlined, FileTextOutlined,
   DeleteOutlined, DownloadOutlined,
-  RobotOutlined, CheckOutlined,
-  MinusCircleOutlined
+  CheckCircleOutlined,
+  PlusOutlined, UnorderedListOutlined,
+  SendOutlined, MinusCircleOutlined
 } from "@ant-design/icons";
 import dayjs from "dayjs";
-
-// Import isSameOrAfter plugin cho Day.js
 import isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
 
 import TaskService from "../../api/task.service";
 import { useAuth } from "../../context/AuthContext";
+
 dayjs.extend(isSameOrAfter);
 
 const { TextArea } = Input;
 const { Option } = Select;
 const { Dragger } = Upload;
+const { Text } = Typography;
 
 const TaskModal = ({
   taskId,
   projectId,
-  members,
-  statuses,
+  members = [], // Fix lỗi undefined
+  statuses = [], // Fix lỗi undefined
   onClose,
   onTaskChanged,
-  onTaskRefreshed,
 }) => {
   const { user } = useAuth();
   const isEditMode = !!taskId;
 
-  // 1. KHAI BÁO FORM HOOK
   const [form] = Form.useForm();
 
   // --- STATE ---
-  const [formData, setFormData] = useState({
-    suggestedAssigneeId: undefined,
-  });
-
   const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState("");
   const [loading, setLoading] = useState(false);
   const [commentLoading, setCommentLoading] = useState(false);
   const [taskAttachments, setTaskAttachments] = useState([]);
-  const [loadingSuggest, setLoadingSuggest] = useState(false);
 
-
-  // --- LOAD DATA & SET FORM VALUES ---
+  // --- LOAD DATA ---
   const fetchTaskAttachments = async () => {
     if (!isEditMode) return;
     try {
@@ -63,9 +54,8 @@ const TaskModal = ({
         uid: f.id,
         name: f.fileName,
         status: 'done',
-        // Đảm bảo đường dẫn này khớp với cấu hình server
         url: `/public/uploads/attachments/${f.filePath.split('/').pop()}`,
-        user: { id: f.userId, name: "User name" },
+        user: { id: f.userId, name: "User" },
       }));
       setTaskAttachments(formattedFiles);
     } catch (err) {
@@ -88,152 +78,100 @@ const TaskModal = ({
             assignedId = undefined;
           }
 
-          // ==========================================================
-          // 💡 LOGIC TẢI: CHUỖI TEXT -> MẢNG (GIỮ NGUYÊN VÀ ĐÃ ĐƯỢC XÁC NHẬN ĐÚNG)
-          // ==========================================================
-          let requiredSkillsArray = [];
-          if (t.requiredSkills) {
-            if (Array.isArray(t.requiredSkills)) {
-              requiredSkillsArray = t.requiredSkills;
-            } else if (typeof t.requiredSkills === 'string') {
-              try {
-                // Cố gắng parse JSON nếu đã đổi sang Sequelize.JSON
-                requiredSkillsArray = JSON.parse(t.requiredSkills);
-                if (!Array.isArray(requiredSkillsArray)) {
-                  requiredSkillsArray = [];
-                }
-              } catch (e) {
-                // Nếu không phải JSON hợp lệ (chuỗi tags cũ), xử lý như chuỗi tags:
-                requiredSkillsArray = t.requiredSkills
-                  .split(/[\s,]+/)
-                  .map(s => s.trim())
-                  .filter(s => s.length > 0);
-              }
+          // Xử lý Subtasks
+          let parsedSubtasks = [];
+          try {
+            if (typeof t.subtasksTemplate === 'string') {
+              parsedSubtasks = JSON.parse(t.subtasksTemplate);
+            } else if (Array.isArray(t.subtasksTemplate)) {
+              parsedSubtasks = t.subtasksTemplate;
             }
+          } catch (e) {
+            console.error("Error parsing subtasks:", e);
           }
-          // ==========================================================
 
-          // SET GIÁ TRỊ VÀO FORM (Day.js objects)
           form.setFieldsValue({
             title: t.title,
             description: t.description || "",
             assigneeId: assignedId,
             priority: t.priority || "Minor",
-            statusId: t.statusId || (statuses.length > 0 ? statuses[0].id : undefined),
+            statusId: t.statusId || (statuses?.length > 0 ? statuses[0].id : undefined),
             startDate: t.startDate ? dayjs(t.startDate) : null,
             dueDate: t.dueDate ? dayjs(t.dueDate) : null,
             progress: t.progress || 0,
-            requiredSkills: requiredSkillsArray // PHẢI LÀ MẢNG
+            subtasks: parsedSubtasks, // Load subtasks
           });
-
-          // Cập nhật state phụ
-          setFormData(prev => ({
-            ...prev,
-            suggestedAssigneeId: t.suggestedAssigneeId || undefined,
-          }));
 
           setComments(t.comments || []);
           fetchTaskAttachments();
         })
         .catch((err) => {
-          message.error("Error loading task: " + (err.response?.data?.message || err.message));
+          console.error(err);
+          message.error("Failed to load task details.");
         })
         .finally(() => setLoading(false));
     } else {
-      // Thiết lập giá trị mặc định khi tạo mới
       const defaultValues = {
-        statusId: statuses.length > 0 ? statuses[0].id : undefined,
+        statusId: statuses?.length > 0 ? statuses[0].id : undefined,
         priority: "Minor",
         progress: 0,
+        subtasks: []
       };
       form.setFieldsValue(defaultValues);
-      setFormData(prev => ({ ...prev, suggestedAssigneeId: undefined }));
     }
-  }, [taskId, isEditMode, statuses, form, members]);
+  }, [taskId, isEditMode, statuses, form]);
 
   // --- HANDLERS ---
-
   const handleSubmit = async () => {
     setLoading(true);
     try {
-      // 1. Lấy giá trị gốc từ Form (values.requiredSkills là MẢNG hoặc null/undefined)
       const values = await form.validateFields();
 
-      // 2. CHUYỂN ĐỔI MẢNG TAGS TỪ FORM SANG CHUỖI TEXT CHO DB
-      let skillsPayload = values.requiredSkills; // (Đây là một MẢNG từ Select mode="tags")
-
-      // Chỉ xử lý nếu nó là mảng
-      if (Array.isArray(skillsPayload)) {
-        // Chuyển MẢNG sang CHUỖI TEXT, nối bằng dấu phẩy
-        skillsPayload = skillsPayload
-          .filter(s => s.trim().length > 0)
-          .join(',');
-      }
-
-      // Nếu kết quả là chuỗi rỗng sau khi join, đặt là null
-      if (skillsPayload === "") {
-        skillsPayload = null;
-      }
-
-      // 3. KIỂM TRA VALIDATION NGÀY THÁNG
       const startDateObj = values.startDate ? dayjs(values.startDate) : null;
       const dueDateObj = values.dueDate ? dayjs(values.dueDate) : null;
 
       if (startDateObj && dueDateObj) {
         if (startDateObj.isSameOrAfter(dueDateObj)) {
-          message.error("The Due Date must be later than the Start Date.");
+          message.error("Due Date must be later than Start Date.");
           setLoading(false);
-          return; // Dừng lại nếu validation thất bại
+          return;
         }
       }
 
-      // ==========================================================
-      // 💡 FIX CỐT LÕI: SỬ DỤNG DESTRUCTURING ĐỂ LOẠI BỎ requiredSkills GỐC
-      // ==========================================================
-      const {
-        requiredSkills, // Loại bỏ trường này khỏi values gốc
-        suggestedAssigneeId, // Loại bỏ trường này khỏi values gốc
-        startDate,
-        dueDate,
-        assigneeId,
-        ...rest // Lấy tất cả các trường còn lại (title, description, priority, progress, statusId...)
-      } = values;
-
-      const payload = {
-        // Gán các trường còn lại
-        ...rest,
+      let payload = {
+        ...values,
         projectId,
-
-        // Gán các trường đã được xử lý/chuẩn hóa
-        startDate: startDate ? startDate.toISOString() : null,
-        dueDate: dueDate ? dueDate.toISOString() : null,
-        assigneeId: assigneeId || null,
-
-        // GÁN CHẮC CHẮN GIÁ TRỊ ĐÃ XỬ LÝ (CHUỖI TEXT HOẶC null)
-        requiredSkills: skillsPayload,
-
-        // Gán giá trị mặc định cho suggestedAssigneeId
-        suggestedAssigneeId: undefined,
+        startDate: values.startDate ? values.startDate.toISOString() : null,
+        dueDate: values.dueDate ? values.dueDate.toISOString() : null,
+        assigneeId: values.assigneeId || null,
+        subtasksTemplate: values.subtasks || [], // Lưu subtasks vào DB
       };
 
-      if (isEditMode) await TaskService.updateTask(taskId, payload);
-      else await TaskService.createTask(payload);
+      delete payload.subtasks; // Xóa field tạm
+      const { id, taskId: rogueTaskId, ...cleanPayload } = payload;
 
-      message.success(isEditMode ? "Task updated successfully!" : "Task created successfully!");
+      if (isEditMode) {
+        await TaskService.updateTask(taskId, cleanPayload);
+        message.success("Task updated successfully!");
+      } else {
+        await TaskService.createTask(cleanPayload);
+        message.success("Task created successfully!");
+      }
+
       onTaskChanged();
       onClose();
     } catch (err) {
+      console.error("Submit error:", err);
       if (err.errorFields) {
-        message.error("Please fill in all required fields correctly.");
+        message.error("Please fill in all required fields.");
       } else {
-        message.error(err.response?.data?.message || err.message);
+        message.error("An error occurred while saving.");
       }
     } finally {
       setLoading(false);
     }
   };
 
-  // ADDED: DELETE HANDLER (from the second file)
   const handleDelete = async () => {
     setLoading(true);
     try {
@@ -242,14 +180,13 @@ const TaskModal = ({
       onTaskChanged();
       onClose();
     } catch (err) {
-      message.error("Error deleting task: " + (err.response?.data?.message || err.message));
+      console.error(err);
+      message.error("Failed to delete task.");
     } finally {
       setLoading(false);
     }
   };
 
-  // ... (Các hàm khác: handleAddComment, getPriorityColor, handleSuggestAssignee, handleAcceptSuggestion, handleTaskUploadChange, handleTaskDeleteFile, taskUploadProps) ...
-  // [Phần còn lại của code (handleAddComment -> taskUploadProps) được giữ nguyên không thay đổi logic so với file bạn gửi]
   const handleAddComment = async () => {
     if (!newComment.trim()) return;
     setCommentLoading(true);
@@ -263,7 +200,8 @@ const TaskModal = ({
       setComments([...comments, addedComment]);
       setNewComment("");
     } catch (err) {
-      message.error("Error sending comment: " + err.message);
+      console.error(err);
+      message.error("Failed to post comment.");
     } finally {
       setCommentLoading(false);
     }
@@ -278,88 +216,38 @@ const TaskModal = ({
     }
   };
 
-  // --- AUTO ASSIGNMENT HANDLERS (Sử dụng form.getFieldValue) ---
-  const currentAssigneeId = Form.useWatch('assigneeId', form);
-  const currentRequiredSkills = Form.useWatch('requiredSkills', form);
-  const suggestedAssignee = members.find(m => m.id === formData.suggestedAssigneeId);
-
-  const handleSuggestAssignee = async () => {
-    if (!taskId) return message.warning("Please save the task before requesting a suggestion.");
-
-    setLoadingSuggest(true);
-    try {
-      const response = await TaskService.suggestTaskAssignment(taskId);
-
-      if (response.data.suggestedAssignee) {
-        const suggested = response.data.suggestedAssignee;
-        message.success(`System suggests: ${suggested.name} (${suggested.score} points).`);
-
-        setFormData(prev => ({
-          ...prev,
-          suggestedAssigneeId: suggested.id
-        }));
-        if (onTaskRefreshed) {
-          onTaskRefreshed();
-        }
-      } else {
-        message.info(response.data.message);
-      }
-
-    } catch (error) {
-      message.error(error.response?.data?.message || 'Error generating suggestion.');
-    } finally {
-      setLoadingSuggest(false);
-    }
-  };
-
-  const handleAcceptSuggestion = () => {
-    if (suggestedAssignee) {
-      form.setFieldsValue({ assigneeId: suggestedAssignee.id });
-      setFormData(prev => ({
-        ...prev,
-        suggestedAssigneeId: undefined
-      }));
-      message.info(`Accepted ${suggestedAssignee.name} as the assignee.`);
-    }
-  };
-
-  // --- UPLOAD HANDLERS (Retained) ---
+  // --- UPLOAD HANDLERS ---
   const handleTaskUploadChange = async ({ file: fileInfo }) => {
     const file = fileInfo.originFileObj;
     if (fileInfo.status === 'uploading') return;
-
     if (fileInfo.status === 'done' || file) {
       try {
         const res = await TaskService.uploadAttachment(taskId, file);
         const newAttachment = res.data.attachment;
-
-        message.success(`${newAttachment.fileName} uploaded successfully.`);
-
-        const uploadedFile = {
+        message.success(`${newAttachment.fileName} uploaded.`);
+        setTaskAttachments(prev => [{
           ...newAttachment,
           uid: newAttachment.id,
           name: newAttachment.fileName,
           status: 'done',
           url: `/public/uploads/attachments/${newAttachment.filePath.split('/').pop()}`,
           user: { name: user.name, id: user.id },
-        };
-
-        setTaskAttachments(prev => [uploadedFile, ...prev]);
-
+        }, ...prev]);
       } catch (err) {
-        message.error(err.response?.data?.message || `Upload failed: ${fileInfo.name}`);
+        console.error(err);
+        message.error("Upload failed.");
       }
     }
   };
 
-  const handleTaskDeleteFile = async (id, fileName) => {
+  const handleTaskDeleteFile = async (id) => {
     try {
-      message.loading(`Deleting ${fileName}...`, 0.5);
       await TaskService.deleteAttachment(id);
       setTaskAttachments(taskAttachments.filter(item => item.id !== id));
-      message.success("File deleted successfully.");
+      message.success("File deleted.");
     } catch (err) {
-      message.error(err.response?.data?.message || "Error deleting file.");
+      console.error(err);
+      message.error("Failed to delete file.");
     }
   };
 
@@ -367,79 +255,78 @@ const TaskModal = ({
     name: 'attachment',
     multiple: true,
     showUploadList: false,
-    onChange: handleTaskUploadChange,
     customRequest: async (options) => {
       const { file } = options;
       try {
         await handleTaskUploadChange({ file: { originFileObj: file, status: 'done', name: file.name } });
-      } catch (e) {
-        options.onError(e);
-      }
+      } catch (e) { options.onError(e); }
     }
   };
 
-  // --- ATTACHMENTS TAB (Wrapped in useMemo) ---
-  const TaskAttachmentsTab = useMemo(() => () => (
-    <div style={{ paddingTop: '10px' }}>
-      <Dragger {...taskUploadProps} style={{ marginBottom: 20, background: '#fafafa' }}>
-        <p className="ant-upload-drag-icon">
-          <InboxOutlined style={{ color: '#1890ff' }} />
-        </p>
-        <p className="ant-upload-text">Drag or click to attach files to this task</p>
-        <p className="ant-upload-hint">Files will be linked directly to this task.</p>
-      </Dragger>
+  // --- SUBTASKS COMPONENT (Phần bạn yêu cầu) ---
+  const SubtasksList = () => (
+    <Form.List name="subtasks">
+      {(fields, { add, remove }) => (
+        <div style={{ marginTop: 10 }}>
+          {fields.map(({ key, name, ...restField }) => (
+            <Row key={key} style={{ marginBottom: 8 }} align="middle" gutter={8}>
+              <Col flex="30px" style={{ textAlign: 'center' }}>
+                <Form.Item
+                  {...restField}
+                  name={[name, 'completed']}
+                  valuePropName="checked"
+                  noStyle
+                >
+                  <Checkbox />
+                </Form.Item>
+              </Col>
+              <Col flex="auto">
+                <Form.Item
+                  {...restField}
+                  name={[name, 'title']}
+                  noStyle
+                  rules={[{ required: true, message: 'Missing subtask title' }]}
+                >
+                  <Input placeholder="Subtask title..." bordered={false} style={{ borderBottom: '1px solid #f0f0f0' }} />
+                </Form.Item>
+              </Col>
+              <Col flex="30px">
+                <MinusCircleOutlined onClick={() => remove(name)} style={{ color: '#ff4d4f', cursor: 'pointer' }} />
+              </Col>
+            </Row>
+          ))}
+          <Form.Item>
+            <Button type="dashed" onClick={() => add({ completed: false, title: '' })} block icon={<PlusOutlined />}>
+              Add Subtask
+            </Button>
+          </Form.Item>
+        </div>
+      )}
+    </Form.List>
+  );
 
-      <h4 style={{ marginBottom: 15 }}>Attached Files ({taskAttachments.length})</h4>
-      <List
-        itemLayout="horizontal"
-        dataSource={taskAttachments}
-        locale={{ emptyText: "No attachments yet." }}
-        renderItem={(item) => (
-          <List.Item
-            actions={[
-              <Button type="text" icon={<DownloadOutlined />} href={item.url} target="_blank">Download</Button>,
-              <Popconfirm title="Are you sure you want to delete this file?" onConfirm={() => handleTaskDeleteFile(item.id, item.name)}>
-                <Button type="text" danger icon={<DeleteOutlined />} />
-              </Popconfirm>
-            ]}
-          >
-            <List.Item.Meta
-              avatar={<FileTextOutlined style={{ fontSize: '24px', color: '#1890ff' }} />}
-              title={<a href={item.url} target="_blank">{item.name}</a>}
-              description={`Size: ${(item.fileSize / 1024).toFixed(0)} KB • Uploaded by: ${item.user?.name || 'Unknown'}`}
-            />
-          </List.Item>
-        )}
-      />
-    </div>
-  ), [taskAttachments, user.name, taskUploadProps]);
-
-  // --- TASK INFO TAB (SỬ DỤNG FORM HOOK & GỘP FORM) ---
+  // --- TABS CONTENT ---
   const TaskInfoTab = () => (
-    <Form
-      form={form}
-      layout="vertical"
-    >
+    <Form form={form} layout="vertical">
       <Row gutter={[24, 24]}>
-        {/* Left Column (Main Info & Comments) */}
+        {/* Left Column */}
         <Col xs={24} md={16}>
-          <Form.Item
-            label={<b>Title</b>}
-            name="title"
-            rules={[{ required: true, message: 'Please input the task title!' }]}
-          >
-            <Input size="large" placeholder="Enter task title..." />
+          <Form.Item label={<b>Title</b>} name="title" rules={[{ required: true, message: 'Please input title!' }]}>
+            <Input size="large" placeholder="What needs to be done?" />
           </Form.Item>
 
           <Form.Item label={<b>Description</b>} name="description">
-            <TextArea rows={6} placeholder="Detailed description..." />
+            <TextArea rows={5} placeholder="Add more details..." />
           </Form.Item>
 
-          {/* COMMENTS (GIỮ NGUYÊN) */}
+          {/* Subtask Section */}
+          <Divider orientation="left" plain><UnorderedListOutlined /> Subtasks</Divider>
+          <SubtasksList />
+
           {isEditMode && (
             <div style={{ marginTop: 30 }}>
               <Divider orientation="left">Comments</Divider>
-              <div style={{ maxHeight: '300px', overflowY: 'auto', paddingRight: '10px' }}>
+              <div style={{ maxHeight: '250px', overflowY: 'auto', marginBottom: 15 }}>
                 <List
                   itemLayout="horizontal"
                   dataSource={comments}
@@ -447,39 +334,29 @@ const TaskModal = ({
                   renderItem={(item) => (
                     <List.Item>
                       <List.Item.Meta
-                        avatar={<Avatar style={{ backgroundColor: '#87d068' }}>{item.user?.name?.charAt(0)?.toUpperCase() || <UserOutlined />}</Avatar>}
+                        avatar={<Avatar style={{ backgroundColor: '#87d068' }}>{item.user?.name?.charAt(0) || 'U'}</Avatar>}
                         title={
                           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <span style={{ fontWeight: 'bold' }}>{item.user?.name || "Unknown User"}</span>
-                            <span style={{ fontSize: '12px', color: '#999' }}>
-                              {dayjs(item.createdAt).format("MMM D, YYYY HH:mm")}
-                            </span>
+                            <span style={{ fontWeight: 600 }}>{item.user?.name || "User"}</span>
+                            <span style={{ fontSize: '12px', color: '#999' }}>{dayjs(item.createdAt).format("MMM D, HH:mm")}</span>
                           </div>
                         }
-                        description={
-                          <div style={{ backgroundColor: '#f5f5f5', padding: '8px 12px', borderRadius: '8px', marginTop: '4px', color: '#333' }}>
-                            {item.message}
-                          </div>
-                        }
+                        description={<div style={{ background: '#f5f5f5', padding: '8px', borderRadius: '6px', marginTop: 4 }}>{item.message}</div>}
                       />
                     </List.Item>
                   )}
                 />
               </div>
-
-              <div style={{ display: 'flex', gap: 10, marginTop: 15 }}>
+              <div style={{ display: 'flex', gap: 10 }}>
                 <Input placeholder="Write a comment..." value={newComment} onChange={(e) => setNewComment(e.target.value)} onPressEnter={handleAddComment} />
-                <Button type="primary" icon={<SendOutlined />} onClick={handleAddComment} loading={commentLoading}>
-                  Send
-                </Button>
+                <Button type="primary" icon={<SendOutlined />} onClick={handleAddComment} loading={commentLoading}>Send</Button>
               </div>
             </div>
           )}
         </Col>
 
-        {/* Right Column (Meta Data - Bây giờ chỉ chứa Form.Item) */}
+        {/* Right Column */}
         <Col xs={24} md={8} style={{ borderLeft: '1px solid #f0f0f0', paddingLeft: '24px' }}>
-
           <Form.Item label="Status" name="statusId">
             <Select placeholder="Select status">
               {statuses?.map((s) => (<Option key={s.id} value={s.id}>{s.name}</Option>))}
@@ -487,169 +364,109 @@ const TaskModal = ({
           </Form.Item>
 
           <Form.Item label="Assignee" name="assigneeId">
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <div style={{ flexGrow: 1 }}>
-                <Select
-                  placeholder="-- Unassigned --"
-                  allowClear
-                  value={currentAssigneeId}
-                  onChange={(value) => {
-                    form.setFieldsValue({ assigneeId: value });
-                  }}>
-                  {members?.map((m) => (
-                    <Option key={m.id} value={m.id}>
-                      <Avatar size="small" style={{ marginRight: 8, backgroundColor: '#1890ff' }}>{m.name?.charAt(0)}</Avatar>
-                      {m.name}
-                    </Option>
-                  ))}
-                </Select>
-              </div>
-
-              {/* Suggest Button */}
-              {isEditMode && (
-                <Button
-                  type="dashed"
-                  icon={<RobotOutlined />}
-                  onClick={handleSuggestAssignee}
-                  loading={loadingSuggest}
-                  title="System assignment suggestion"
-                  htmlType="button"
-                />
-              )}
-            </div>
-
-            {/* Suggestion Result */}
-            {suggestedAssignee && currentAssigneeId !== suggestedAssignee.id && (
-              <div style={{ marginTop: 10, padding: 8, background: '#f6ffed', border: '1px solid #b7eb8f', borderRadius: 4 }}>
-                <Tag color="green" icon={<RobotOutlined />}>Suggestion:</Tag>
-                <span style={{ fontWeight: 'bold' }}>{suggestedAssignee.name}</span>
-                <Button
-                  size="small"
-                  type="primary"
-                  icon={<CheckOutlined />}
-                  style={{ marginLeft: 10, backgroundColor: '#52c41a', borderColor: '#52c41a' }}
-                  onClick={handleAcceptSuggestion}
-                >
-                  Accept
-                </Button>
-              </div>
-            )}
+              <Select
+                placeholder="Unassigned"
+                allowClear
+                showSearch
+                optionFilterProp="children"
+                onChange={(val) => form.setFieldsValue({ assigneeId: val })}
+              >
+                {members?.map((m) => (
+                  <Option key={m.id} value={m.id}>
+                    <Avatar size="small" style={{ marginRight: 8, backgroundColor: '#1890ff' }}>{m.name?.charAt(0)}</Avatar>
+                    {m.name}
+                  </Option>
+                ))}
+              </Select>
           </Form.Item>
 
           <Form.Item label="Priority" name="priority">
             <Select>
               {["Minor", "Major", "Critical", "Blocker"].map(p => (
-                <Option key={p} value={p}>
-                  <Tag color={getPriorityColor(p)}>{p}</Tag>
-                </Option>
+                <Option key={p} value={p}><Tag color={getPriorityColor(p)}>{p}</Tag></Option>
               ))}
             </Select>
-          </Form.Item>
-
-          {/* REQUIRED SKILLS */}
-          <Form.Item label="Required Skills" name="requiredSkills">
-            <Select
-              mode="tags"
-              value={currentRequiredSkills}
-              style={{ width: '100%' }}
-              placeholder="Enter skills (e.g., React, Testing, DB Design)"
-              onChange={(value) => form.setFieldsValue({ requiredSkills: value })}
-            // Cho phép nhập tự do, không cần options
-            />
-            <p style={{ fontSize: '12px', color: '#999', marginTop: 5 }}>Enter skills separated by commas or pressing Enter.</p>
           </Form.Item>
 
           <Divider />
 
           <Form.Item label="Start Date" name="startDate">
-            <DatePicker
-              style={{ width: '100%' }}
-              showTime
-              format="YYYY-MM-DD HH:mm"
-              placeholder="Select date and time"
-            />
+            <DatePicker showTime format="YYYY-MM-DD HH:mm" style={{ width: '100%' }} placeholder="Select date" />
           </Form.Item>
 
           <Form.Item label="Due Date" name="dueDate">
-            <DatePicker
-              style={{ width: '100%' }}
-              showTime
-              format="YYYY-MM-DD HH:mm"
-              placeholder="Select date and time"
-            />
+            <DatePicker showTime format="YYYY-MM-DD HH:mm" style={{ width: '100%' }} placeholder="Select date" />
           </Form.Item>
 
-          {/* Slider cần phải được wrap bởi Form.Item và có `name` */}
-          <Form.Item
-            label={`Progress: ${form.getFieldValue('progress') || 0}%`}
-            name="progress"
-            // Thêm normalize để Slider không bị re-render do thay đổi label
-            normalize={value => value === undefined ? 0 : value}
-          >
+          <Form.Item label={`Progress: ${form.getFieldValue('progress') || 0}%`} name="progress" normalize={v => v || 0}>
             <Slider min={0} max={100} />
           </Form.Item>
-
         </Col>
       </Row>
     </Form>
   );
 
-  // --- TABS ---
-  const modalItems = [
-    {
-      key: 'info',
-      label: 'Task Details',
-      children: <TaskInfoTab />,
-    },
-    ...(isEditMode ? [{
-      key: 'attachments',
-      label: <><PaperClipOutlined /> Attachments ({taskAttachments.length})</>,
-      children: <TaskAttachmentsTab />
-    }] : [])
+  const AttachmentsTab = useMemo(() => () => (
+    <div style={{ paddingTop: 10 }}>
+      <Dragger {...taskUploadProps} style={{ marginBottom: 20, background: '#fafafa' }}>
+        <p className="ant-upload-drag-icon"><InboxOutlined style={{ color: '#1890ff' }} /></p>
+        <p className="ant-upload-text">Click or drag file to this area to upload</p>
+      </Dragger>
+      <h4>Attached Files ({taskAttachments.length})</h4>
+      <List
+        itemLayout="horizontal"
+        dataSource={taskAttachments}
+        locale={{ emptyText: "No attachments." }}
+        renderItem={(item) => (
+          <List.Item actions={[
+            <Button type="text" icon={<DownloadOutlined />} href={item.url} target="_blank">Download</Button>,
+            <Popconfirm title="Delete this file?" onConfirm={() => handleTaskDeleteFile(item.id)}>
+              <Button type="text" danger icon={<DeleteOutlined />} />
+            </Popconfirm>
+          ]}>
+            <List.Item.Meta
+              avatar={<FileTextOutlined style={{ fontSize: 24, color: '#1890ff' }} />}
+              title={<a href={item.url} target="_blank">{item.name}</a>}
+              description={`${(item.fileSize / 1024).toFixed(0)} KB • ${dayjs(item.uploadedAt).format("YYYY-MM-DD")}`}
+            />
+          </List.Item>
+        )}
+      />
+    </div>
+  ), [taskAttachments, user.name]);
+
+  const items = [
+    { key: 'info', label: 'Details', children: <TaskInfoTab /> },
+    ...(isEditMode ? [{ key: 'files', label: `Attachments (${taskAttachments.length})`, children: <AttachmentsTab /> }] : [])
   ];
 
   return (
     <Modal
-      key={taskId}
+      open={true}
       title={
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {isEditMode ? <CheckCircleOutlined style={{ color: '#1890ff' }} /> : null}
-          <span style={{ fontSize: '1.2rem' }}>
-            {isEditMode ? `Task #${taskId}` : "Create New Task"}
-          </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {isEditMode ? <CheckCircleOutlined style={{ color: '#1890ff' }} /> : <PlusOutlined />}
+          <span>{isEditMode ? `Edit Task #${taskId}` : "Create New Task"}</span>
         </div>
       }
-      open={true}
       onCancel={onClose}
-      onOk={handleSubmit} // Main Save/Update function
+      onOk={handleSubmit}
+      width={900}
       confirmLoading={loading}
-      width="90%"
-      style={{ top: 20 }}
       maskClosable={false}
-
+      style={{ top: 20, fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" }}
+      bodyStyle={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" }}
       footer={[
         isEditMode && (
-          <Popconfirm
-            key="delete"
-            title="Are you sure you want to delete this task?"
-            onConfirm={handleDelete}
-            okText="Yes"
-            cancelText="No"
-          >
-            <Button type="primary" danger icon={<MinusCircleOutlined />} loading={loading}>
-              Delete Task
-            </Button>
+          <Popconfirm key="del" title="Delete this task?" description="This action cannot be undone." onConfirm={handleDelete} okText="Yes" cancelText="No">
+            <Button danger icon={<DeleteOutlined />} style={{ float: 'left' }}>Delete</Button>
           </Popconfirm>
         ),
-        <Button key="cancel" onClick={onClose}>
-          Cancel
-        </Button>,
-        <Button key="submit" type="primary" onClick={handleSubmit} loading={loading}>
-          Save
-        </Button>,
+        <Button key="cancel" onClick={onClose}>Cancel</Button>,
+        <Button key="submit" type="primary" onClick={handleSubmit} loading={loading}>Save</Button>,
       ]}
     >
-      <Tabs defaultActiveKey="info" items={modalItems} style={{ minHeight: '400px' }} />
+      <Tabs defaultActiveKey="info" items={items} />
     </Modal>
   );
 };
