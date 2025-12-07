@@ -562,9 +562,9 @@ const TaskModal = ({
           </Form.Item>
 
           <Form.Item label="Workload Weight (Point(s))" 
-             tooltip="Đánh giá độ phức tạp/thời gian của Task này (Thang 1-10)"
+             tooltip="Estimate the complexity/time for this Task (Scale 1-10)"
              name="workloadWeight" // Gán name ở đây
-             rules={[{ required: true, message: 'Nhập trọng số' }]}
+             rules={[{ required: true, message: 'Please enter workload weight' }]}
           >
             <InputNumber
               min={1}

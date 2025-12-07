@@ -1,6 +1,7 @@
 // /routes/user.routes.js
 
 const userController = require('../controllers/user.controller');
+const workloadController = require('../controllers/workload.controller');
 const authJwt = require('../middleware/authJwt');
 // Giả định bạn có middleware isLeader để kiểm tra vai trò
 
@@ -12,6 +13,14 @@ module.exports = function (app) {
         );
         next();
     });
+
+    // 💡 API TÍNH TOÁN KHỐI LƯỢNG CÔNG VIỆC TOÀN CẦU
+    // API: GET /api/users/workload/global-summary
+    app.get(
+        '/api/users/workload/global-summary',
+        [authJwt.verifyToken, authJwt.isLeader], // Yêu cầu Leader hoặc Admin để xem
+        workloadController.getGlobalWorkloadSummary // Sử dụng controller từ workload.controller.js
+    );
 
     // API Cập nhật Rules (Chỉ Leader mới được phép)
     // API: PUT /api/users/:userId/rules

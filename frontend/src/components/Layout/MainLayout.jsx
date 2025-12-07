@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext'; // Import useAuth
+import { useAuth } from '../../context/AuthContext';
 import { Layout, Menu, Breadcrumb, theme, Button, Dropdown, Space, Avatar } from 'antd';
 import {
     DesktopOutlined,
@@ -9,8 +9,8 @@ import {
     FileOutlined,
     LogoutOutlined,
     UserOutlined,
-    SunOutlined,
-    MoonOutlined,
+    // SunOutlined, MoonOutlined (không dùng, nên bỏ)
+    BarChartOutlined, // 💡 IMPORT ICON MỚI CHO WORKLOAD
 } from '@ant-design/icons';
 import NotificationBell from '../Notifications/NotificationBell';
 
@@ -19,14 +19,6 @@ const { Header, Content, Footer, Sider } = Layout;
 function getItem(label, key, icon, children) {
     return { key, icon, children, label };
 }
-
-// Sidebar menu
-const items = [
-    getItem('Dashboard', '/dashboard', <PieChartOutlined />),
-    getItem('Projects', '/projects', <DesktopOutlined />),
-    getItem('Team', '/team', <TeamOutlined />),
-    getItem('Documents', '/docs', <FileOutlined />),
-];
 
 const MainLayout = () => {
     const [collapsed, setCollapsed] = useState(false);
@@ -39,12 +31,31 @@ const MainLayout = () => {
 
     // --- GET AUTH CONTEXT ---
     const { user, logout } = useAuth();
+    // 💡 BỔ SUNG: Kiểm tra quyền
+    const isLeader = user?.role === 'leader';
+    // -------------------------
 
     // --- LOGOUT HANDLER ---
     const handleLogout = () => {
         logout(); // Clear token & user state
         navigate('/login'); // Redirect to login page
     };
+
+    // 💡 BỔ SUNG: Xây dựng menu items dựa trên quyền
+    const items = [
+        getItem('Dashboard', '/dashboard', <PieChartOutlined />),
+        getItem('Projects', '/projects', <DesktopOutlined />),
+        getItem('Team', '/team', <TeamOutlined />),
+        getItem('Documents', '/docs', <FileOutlined />),
+    ];
+
+    if (isLeader) {
+        // Thêm mục Global Workload chỉ khi người dùng là Leader
+        items.push(
+            getItem('Global Workload', '/workload-summary', <BarChartOutlined />)
+        );
+    }
+    // --------------------------------------------------
 
     // User dropdown menu
     const userMenuItems = [
@@ -86,7 +97,7 @@ const MainLayout = () => {
                     theme="dark"
                     defaultSelectedKeys={[location.pathname]}
                     mode="inline"
-                    items={items}
+                    items={items} // 💡 SỬ DỤNG MẢNG ITEMS ĐÃ CẬP NHẬT
                     onClick={({ key }) => navigate(key)}
                 />
             </Sider>
@@ -121,7 +132,7 @@ const MainLayout = () => {
                 </Header>
 
                 <Content style={{ margin: '0 16px' }}>
-                    
+
                     <div
                         style={{
                             padding: 24,

@@ -38,11 +38,17 @@ const updateUserExpertise = (userId, expertiseData) => {
     );
 };
 
+const getGlobalWorkloadSummary = () => {
+    // Endpoint không cần userId vì nó lấy thông tin toàn cục
+    return api.get(`/users/workload/global-summary`, { headers: authHeader() });
+};
+
 const UserService = {
     getAssignmentRules,
     updateAssignmentRules,
     getUserExpertise,
     updateUserExpertise,
+    getGlobalWorkloadSummary,
     // ... thêm các hàm quản lý user khác nếu cần
 };
 
