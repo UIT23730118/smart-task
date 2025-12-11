@@ -11,6 +11,81 @@ const Team = db.teams;
 const Resolution = db.resolutions;
 const Notification = db.notifications;
 
+
+// Hàm tính thời gian làm task (Duration)
+const getDurationInDays = (startDate, dueDate) => {
+  if (!startDate || !dueDate) return 1;
+  const start = new Date(startDate);
+  const end = new Date(dueDate);
+  const diffTime = end - start;
+  const diffDays = diffTime / (1000 * 60 * 60 * 24);
+
+  // Tối thiểu 1 ngày (tránh trường hợp làm trong ngày ra 0)
+  return diffDays > 0 ? Math.ceil(diffDays) : 1;
+};
+
+const updateProjectProgress = async (projectId) => {
+  console.log(`\n========== TÍNH TIẾN ĐỘ FINAL (WEIGHT x DURATION) (Project ID: ${projectId}) ==========`);
+
+  if (!projectId) return 0;
+
+  try {
+    // 1. Lấy danh sách task (chỉ cần id, progress, workloadWeight, ngày tháng)
+    const tasks = await Task.findAll({
+      where: { projectId: projectId },
+      attributes: ['id', 'progress', 'workloadWeight', 'startDate', 'dueDate', 'title'],
+      raw: true
+    });
+
+    if (tasks.length === 0) {
+      // Không có task nào -> Progress = 0
+      await Project.update({ progress: 0 }, { where: { id: projectId } });
+      return 0;
+    }
+
+    let totalWeightedProgress = 0; // Tử số: Tổng (Tiến độ * Sức nặng thực tế)
+    let totalRealWeight = 0;       // Mẫu số: Tổng Sức nặng thực tế toàn dự án
+
+    tasks.forEach(task => {
+      const progress = parseFloat(task.progress) || 0;
+
+      // A. Trọng số (Workload Weight - Nhập tay)
+      const weight = parseFloat(task.workloadWeight) || 1;
+
+      // B. Thời gian (Duration - Tính từ ngày bắt đầu đến hạn chót)
+      const duration = getDurationInDays(task.startDate, task.dueDate);
+
+      // === CÔNG THỨC FINAL ===
+      // Sức nặng thực tế = Trọng số * Thời gian
+      const realWeight = weight * duration;
+
+      totalWeightedProgress += (progress * realWeight);
+      totalRealWeight += realWeight;
+
+      console.log(`  > Task [${task.title}]: Weight(${weight}) x Duration(${duration}d) = RealWeight ${realWeight.toFixed(1)} | Done: ${progress}%`);
+    });
+
+    // Tính % trung bình có trọng số
+    const finalProgress = totalRealWeight === 0 ? 0 : (totalWeightedProgress / totalRealWeight);
+    const roundedProgress = Math.round(finalProgress * 100) / 100;
+
+    console.log(`📊 Tổng điểm đạt được: ${totalWeightedProgress.toFixed(1)} / Tổng sức nặng dự án: ${totalRealWeight.toFixed(1)}`);
+    console.log(`✅ Progress dự án: ${roundedProgress}%`);
+
+    // Update vào DB
+    await Project.update(
+      { progress: roundedProgress },
+      { where: { id: projectId } }
+    );
+
+    return roundedProgress;
+
+  } catch (err) {
+    console.error("❌ LỖI TÍNH TIẾN ĐỘ:", err);
+    return 0;
+  }
+};
+
 // Tạo một Task mới
 exports.createTask = async (req, res) => {
   try {
@@ -26,6 +101,7 @@ exports.createTask = async (req, res) => {
       startDate,
       progress,
       requiredSkills,
+      subtasksTemplate,
       workloadWeight,
     } = req.body;
 
@@ -92,6 +168,7 @@ exports.createTask = async (req, res) => {
       dueDate: dueDate || null,
       progress: progress || 0,
       requiredSkills: requiredSkills || null,
+      subtasksTemplate: subtasksTemplate || [],
       workloadWeight: Number(workloadWeight) || 1,
     });
 
@@ -120,6 +197,7 @@ exports.createTask = async (req, res) => {
         isRead: false
       });
     }
+    await updateProjectProgress(projectId);
 
     res.status(201).send(task);
   } catch (error) {
@@ -200,6 +278,7 @@ exports.updateTask = async (req, res) => {
       dueDate: req.body.dueDate,
       progress: req.body.progress,
       requiredSkills: skillsToSave,
+      subtasksTemplate: req.body.subtasksTemplate,
       workloadWeight: req.body.workloadWeight,
     };
 
@@ -212,6 +291,10 @@ exports.updateTask = async (req, res) => {
     });
 
     await task.update(updatedData);
+    if (task.projectId) {
+      console.log(`>>> [DEBUG] Đang tính lại tiến độ cho Project #${task.projectId}...`);
+      await updateProjectProgress(task.projectId);
+    }
     const newAssigneeId = task.assigneeId;
 
     // 2. LOGIC THÔNG BÁO UPDATE
@@ -286,6 +369,11 @@ exports.updateTaskStatus = async (req, res) => {
     task.statusId = newStatusId;
     await task.save();
 
+    if (task.projectId) {
+      console.log(`[KANBAN] Recalculate progress for project ${task.projectId}`);
+      await updateProjectProgress(task.projectId);
+    }
+
     // 1. Logic Notification khi status thay đổi
     if (newStatusId !== oldStatusId && task.assigneeId && task.assigneeId !== updaterId) {
       await Notification.create({
@@ -345,6 +433,8 @@ exports.deleteTask = async (req, res) => {
         isRead: false
       });
     }
+    await updateProjectProgress(task.projectId);
+
     // -----------------------------
 
     return res.status(200).send({ message: "Task deleted successfully." });
@@ -478,7 +568,7 @@ exports.suggestTaskAssignment = async (req, res) => {
       const memberCurrentTasks = Number(member.currentTasks) || 0;
 
       currentScore *= memberAvailability;
-      currentScore -= memberCurrentTasks * 1.0; // Tăng trọng số trừ điểm bận rộn lên 1.0
+      currentScore -= memberCurrentTasks * 1.5; // Tăng trọng số trừ điểm bận rộn lên 1.5
 
       // 4. TÌM NGƯỜỜI PHÙ HỢP NHẤT
       if (currentScore > maxScore) {

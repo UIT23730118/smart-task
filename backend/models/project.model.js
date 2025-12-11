@@ -18,6 +18,7 @@ module.exports = (sequelize, Sequelize) => {
             defaultValue: 1.0,
             allowNull: false
         },
+        progress: { type: Sequelize.FLOAT, defaultValue: 0 },
         startDate: {
             type: Sequelize.DATE,
             defaultValue: Sequelize.NOW

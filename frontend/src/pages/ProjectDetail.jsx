@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
-import { Button, Segmented, Progress, Tabs, Upload, List, message, Popconfirm } from "antd";
+import { Button, Segmented, Progress, Tabs, Upload, List, message, Popconfirm, Typography } from "antd";
 import {
   PlusOutlined,
   UnorderedListOutlined,
@@ -26,6 +26,7 @@ import ProjectSettingsModal from '../components/Project/ProjectSettingsModal';
 import { FaUsersCog, FaRegListAlt, FaCog } from "react-icons/fa"; // Thêm FaCog
 
 const { Dragger } = Upload;
+const { Text } = Typography;
 
 const ProjectDetail = () => {
   const { id: projectId } = useParams();
@@ -219,25 +220,6 @@ const ProjectDetail = () => {
   // 💡 KIỂM TRA QUYỀN LEADER CỦA DỰ ÁN
   const isProjectLeader = user.role === "leader" && user.id === projectData.leaderId;
 
-  // Progress calculation
-  const totalTasks = projectData.tasks.length;
-  const maxPosition = Math.max(...projectData.statuses.map((s) => s.position));
-  const completedTasks = projectData.tasks.filter(
-    (t) => t.status && t.status.position === maxPosition
-  ).length;
-
-  const TaskProgress = ({ completedTasks, totalTasks }) => {
-    const percent = totalTasks === 0 ? 0 : (completedTasks / totalTasks) * 100;
-    return (
-      <Progress
-        percent={percent}
-        format={(percent) => `${Math.round(percent)}%`}
-        strokeWidth={10}
-        status={percent === 100 ? 'success' : 'active'}
-      />
-    );
-  };
-
   // Áp dụng logic lọc mới từ state filters
   const filteredTasks = projectData.tasks.filter((task) => {
     let matches = true;
@@ -274,13 +256,6 @@ const ProjectDetail = () => {
   // Tab 1: Tasks
   const TasksTabContent = () => (
     <>
-      <div className="project-meta-bar" style={{ marginBottom: 20 }}>
-        <h4>Project Progress</h4>
-        <TaskProgress completedTasks={completedTasks} totalTasks={totalTasks} />
-      </div>
-
-      {/* Điều chỉnh: Hợp nhất TaskFilter và các nút điều khiển vào cùng một hàng flex */}
-      {/* 1. TaskFilter (Form lọc chính, đã được điều chỉnh căn chỉnh Form.Item) */}
       <div style={{ marginBottom: 15 }}>
         <TaskFilter
           onSearch={handleFilterChange}
@@ -308,7 +283,6 @@ const ProjectDetail = () => {
           type="primary"
           icon={<PlusOutlined />}
           onClick={openCreateTaskModal}
-        //className="btn btn-primary"
         >
           Create Task
         </Button>
@@ -412,13 +386,37 @@ const ProjectDetail = () => {
           <h1 style={{ fontSize: "28px", marginBottom: "5px" }}>{projectData.name}</h1>
           <p style={{ color: "#666", margin: 0 }}>{projectData.description || "No description"}</p>
 
+          <div style={{ maxWidth: 400, marginTop: 10 }}>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between', // Đẩy 2 bên
+              alignItems: 'center',
+              marginBottom: 4,
+              width: '100%' // ✅ Bắt buộc giãn hết chiều rộng
+            }}>
+              <Text strong style={{ fontSize: 13 }}>Project Progress</Text>
+
+              {/* ✅ Thêm paddingLeft để tạo khoảng cách an toàn */}
+              <Text type="secondary" style={{ fontSize: 13, paddingLeft: '12px', fontWeight: 'bold' }}>
+                {projectData.progress ? projectData.progress.toFixed(2) : '0.00'}%
+              </Text>
+            </div>
+            <Progress
+              percent={projectData.progress || 0}
+              strokeColor={{ '0%': '#108ee9', '100%': '#87d068' }}
+              strokeWidth={10} // Tăng độ dày một chút cho đẹp
+              showInfo={false}
+              status="active"
+            />
+          </div>
+
           {/* 💡 BỔ SUNG: HIỂN THỊ WORKLOAD FACTOR */}
           <p style={{ color: "#000", fontWeight: 'bold', marginTop: '5px' }}>
             Workload Factor: <span style={{ color: '#1890ff' }}>{projectData.workloadFactor ? projectData.workloadFactor.toFixed(1) : '1.0'}x</span>
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
 
           {/* 💡 BỔ SUNG: NÚT PROJECT SETTINGS (CHO LEADER) */}
           {isProjectLeader && (

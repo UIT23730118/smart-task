@@ -19,4 +19,9 @@ module.exports = function (app) {
     );
 
     app.get('/api/dashboard/gantt', [authJwt.verifyToken], controller.getGanttTasks);
+    app.get(
+        "/api/dashboard/gantt-tasks",
+        [authJwt.verifyToken],
+        controller.getGanttTasksWithMembers // Hàm mới
+    );
 };

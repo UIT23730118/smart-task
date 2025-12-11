@@ -2,14 +2,14 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   Modal, Form, Input, Select, DatePicker, Slider,
   Button, Row, Col, Avatar, List, message, Tag, Divider,
-  Tabs, Upload, Popconfirm, InputNumber
+  Tabs, Upload, Popconfirm, InputNumber, Checkbox, Typography
 } from "antd";
 import {
   UserOutlined, SendOutlined,
   CheckCircleOutlined, PaperClipOutlined,
   InboxOutlined, FileTextOutlined,
   DeleteOutlined, DownloadOutlined,
-  RobotOutlined, CheckOutlined,
+  RobotOutlined, CheckOutlined, PlusOutlined, UnorderedListOutlined,
   MinusCircleOutlined
 } from "@ant-design/icons";
 import dayjs from "dayjs";
@@ -28,8 +28,8 @@ const { Dragger } = Upload;
 const TaskModal = ({
   taskId,
   projectId,
-  members,
-  statuses,
+  members = [],
+  statuses = [],
   onClose,
   onTaskChanged,
   onTaskRefreshed,
@@ -88,6 +88,18 @@ const TaskModal = ({
             assignedId = undefined;
           }
 
+          // Xử lý Subtasks
+          let parsedSubtasks = [];
+          try {
+            if (typeof t.subtasksTemplate === 'string') {
+              parsedSubtasks = JSON.parse(t.subtasksTemplate);
+            } else if (Array.isArray(t.subtasksTemplate)) {
+              parsedSubtasks = t.subtasksTemplate;
+            }
+          } catch (e) {
+            console.error("Error parsing subtasks:", e);
+          }
+
           // ==========================================================
           // 💡 LOGIC TẢI: CHUỖI TEXT -> MẢNG (GIỮ NGUYÊN VÀ ĐÃ ĐƯỢC XÁC NHẬN ĐÚNG)
           // ==========================================================
@@ -123,6 +135,7 @@ const TaskModal = ({
             startDate: t.startDate ? dayjs(t.startDate) : null,
             dueDate: t.dueDate ? dayjs(t.dueDate) : null,
             progress: t.progress || 0,
+            subtasks: parsedSubtasks,
             requiredSkills: requiredSkillsArray, // PHẢI LÀ MẢNG
             workloadWeight: t.workloadWeight || 1,
           });
@@ -146,6 +159,7 @@ const TaskModal = ({
         statusId: statuses.length > 0 ? statuses[0].id : undefined,
         priority: "Minor",
         progress: 0,
+        subtasks: [],
         workloadWeight: 1,
       };
       form.setFieldsValue(defaultValues);
@@ -223,6 +237,9 @@ const TaskModal = ({
 
       message.success(isEditMode ? "Task updated successfully!" : "Task created successfully!");
       onTaskChanged();
+      if (onTaskRefreshed) {
+        onTaskRefreshed();
+      }
       onClose();
     } catch (err) {
       if (err.errorFields) {
@@ -242,6 +259,9 @@ const TaskModal = ({
       await TaskService.deleteTask(taskId);
       message.success("Task deleted successfully.");
       onTaskChanged();
+      if (onTaskRefreshed) {
+        onTaskRefreshed();
+      }
       onClose();
     } catch (err) {
       message.error("Error deleting task: " + (err.response?.data?.message || err.message));
@@ -380,6 +400,48 @@ const TaskModal = ({
     }
   };
 
+  // --- SUBTASKS COMPONENT
+  const SubtasksList = () => (
+    <Form.List name="subtasks">
+      {(fields, { add, remove }) => (
+        <div style={{ marginTop: 10 }}>
+          {fields.map(({ key, name, ...restField }) => (
+            <Row key={key} style={{ marginBottom: 8 }} align="middle" gutter={8}>
+              <Col flex="30px" style={{ textAlign: 'center' }}>
+                <Form.Item
+                  {...restField}
+                  name={[name, 'completed']}
+                  valuePropName="checked"
+                  noStyle
+                >
+                  <Checkbox />
+                </Form.Item>
+              </Col>
+              <Col flex="auto">
+                <Form.Item
+                  {...restField}
+                  name={[name, 'title']}
+                  noStyle
+                  rules={[{ required: true, message: 'Missing subtask title' }]}
+                >
+                  <Input placeholder="Subtask title..." bordered={false} style={{ borderBottom: '1px solid #f0f0f0' }} />
+                </Form.Item>
+              </Col>
+              <Col flex="30px">
+                <MinusCircleOutlined onClick={() => remove(name)} style={{ color: '#ff4d4f', cursor: 'pointer' }} />
+              </Col>
+            </Row>
+          ))}
+          <Form.Item>
+            <Button type="dashed" onClick={() => add({ completed: false, title: '' })} block icon={<PlusOutlined />}>
+              Add Subtask
+            </Button>
+          </Form.Item>
+        </div>
+      )}
+    </Form.List>
+  );
+
   // --- ATTACHMENTS TAB (Wrapped in useMemo) ---
   const TaskAttachmentsTab = useMemo(() => () => (
     <div style={{ paddingTop: '10px' }}>
@@ -436,6 +498,9 @@ const TaskModal = ({
           <Form.Item label={<b>Description</b>} name="description">
             <TextArea rows={6} placeholder="Detailed description..." />
           </Form.Item>
+
+          <Divider orientation="left" plain><UnorderedListOutlined /> Subtasks</Divider>
+          <SubtasksList />
 
           {/* COMMENTS (GIỮ NGUYÊN) */}
           {isEditMode && (
@@ -494,6 +559,8 @@ const TaskModal = ({
                 <Select
                   placeholder="-- Unassigned --"
                   allowClear
+                  showSearch
+                  optionFilterProp="children"
                   value={currentAssigneeId}
                   onChange={(value) => {
                     form.setFieldsValue({ assigneeId: value });
@@ -639,7 +706,7 @@ const TaskModal = ({
       onOk={handleSubmit} // Main Save/Update function
       confirmLoading={loading}
       width="90%"
-      style={{ top: 20 }}
+      style={{ top: 20}}
       maskClosable={false}
 
       footer={[
