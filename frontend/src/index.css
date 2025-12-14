@@ -1,5 +1,35 @@
 /* /src/index.css - FULL STYLES */
+/* 1. Import font Inter từ Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
+/* 2. Ép toàn bộ web dùng font này */
+* {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif !important;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Inter', sans-serif !important;
+  -webkit-font-smoothing: antialiased; /* Giúp chữ mượt hơn trên Mac/Windows */
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 3. Đảm bảo các component của Ant Design cũng nhận font này */
+.ant-typography,
+.ant-btn,
+.ant-input,
+.ant-menu,
+.ant-table,
+.ant-modal,
+.ant-tabs {
+  font-family: 'Inter', sans-serif !important;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
 :root {
   --primary-color: #007bff;
   --secondary-color: #6c757d;

@@ -9,73 +9,102 @@ const Task = db.tasks;
 const IssueType = db.issueTypes;
 const { Op } = require('sequelize');
 
-// 1. TẠO PROJECT (Tự động tạo Team "General" cho Leader)
-exports.createProject = async (req, res) => {
-	try {
-		const leaderId = req.userId;
-		const project = await Project.create({
-			name: req.body.name,
-			description: req.body.description,
-			leaderId: leaderId,
-			startDate: new Date(),
-		});
+// Hàm tính thời gian làm task (Duration)
+const getDurationInDays = (startDate, dueDate) => {
+  if (!startDate || !dueDate) return 1;
+  const start = new Date(startDate);
+  const end = new Date(dueDate);
+  const diffTime = end - start;
+  const diffDays = diffTime / (1000 * 60 * 60 * 24);
 
-		// Tạo team mặc định
-		const team = await Team.create({
-			name: `${project.name} Core Team`,
-			projectId: project.id,
-			leaderId: leaderId,
-		});
-
-		// Thêm Leader vào team
-		await TeamMember.create({
-			teamId: team.id,
-			userId: leaderId,
-			role: 'subleader',
-		});
-
-		res.status(201).send(project);
-	} catch (error) {
-		res.status(500).send({ message: error.message });
-	}
+  // Tối thiểu 1 ngày (tránh trường hợp làm trong ngày ra 0)
+  return diffDays > 0 ? Math.ceil(diffDays) : 1;
 };
 
-// 2. LẤY PROJECT CỦA TÔI (Qua Leader ID hoặc qua Team Member)
-exports.getMyProjects = async (req, res) => {
-	try {
-		const userId = req.userId;
+const updateProjectProgress = async (projectId) => {
+  console.log(`\n========== TÍNH TIẾN ĐỘ FINAL (WEIGHT x DURATION) (Project ID: ${projectId}) ==========`);
 
-		const user = await User.findByPk(userId, {
-			include: [
-				{ model: Project, as: 'ledProjects' }, // Project mình làm Leader
-				{
-					model: Team,
-					as: 'teams', // Project mình tham gia qua Team
-					include: [{ model: Project, required: true }],
-				},
-			],
-		});
+  if (!projectId) return 0;
 
-		if (!user) return res.status(404).send({ message: 'User not found' });
+  try {
+    // 1. Lấy danh sách task (chỉ cần id, progress, workloadWeight, ngày tháng)
+    const tasks = await Task.findAll({
+      where: { projectId: projectId },
+      attributes: ['id', 'progress', 'workloadWeight', 'startDate', 'dueDate', 'title'],
+      raw: true
+    });
 
-		const directProjects = user.ledProjects || [];
-		const teamProjects = user.teams.map((t) => t.project).filter((p) => p);
+    if (tasks.length === 0) {
+      // Không có task nào -> Progress = 0
+      await Project.update({ progress: 0 }, { where: { id: projectId } });
+      return 0;
+    }
 
-		// Gộp và lọc trùng
-		const projectMap = new Map();
-		[...directProjects, ...teamProjects].forEach((p) => projectMap.set(p.id, p));
+    let totalWeightedProgress = 0; // Tử số: Tổng (Tiến độ * Sức nặng thực tế)
+    let totalRealWeight = 0;       // Mẫu số: Tổng Sức nặng thực tế toàn dự án
 
-		res.status(200).send(Array.from(projectMap.values()));
-	} catch (error) {
-		res.status(500).send({ message: error.message });
-	}
+    tasks.forEach(task => {
+      const progress = parseFloat(task.progress) || 0;
+
+      // A. Trọng số (Workload Weight - Nhập tay)
+      const weight = parseFloat(task.workloadWeight) || 1;
+
+      // B. Thời gian (Duration - Tính từ ngày bắt đầu đến hạn chót)
+      const duration = getDurationInDays(task.startDate, task.dueDate);
+
+      // === CÔNG THỨC FINAL ===
+      // Sức nặng thực tế = Trọng số * Thời gian
+      const realWeight = weight * duration;
+
+      totalWeightedProgress += (progress * realWeight);
+      totalRealWeight += realWeight;
+
+      console.log(`  > Task [${task.title}]: Weight(${weight}) x Duration(${duration}d) = RealWeight ${realWeight.toFixed(1)} | Done: ${progress}%`);
+    });
+
+    // Tính % trung bình có trọng số
+    const finalProgress = totalRealWeight === 0 ? 0 : (totalWeightedProgress / totalRealWeight);
+    const roundedProgress = Math.round(finalProgress * 100) / 100;
+
+    console.log(`📊 Tổng điểm đạt được: ${totalWeightedProgress.toFixed(1)} / Tổng sức nặng dự án: ${totalRealWeight.toFixed(1)}`);
+    console.log(`✅ Progress dự án: ${roundedProgress}%`);
+
+    // Update vào DB
+    await Project.update(
+      { progress: roundedProgress },
+      { where: { id: projectId } }
+    );
+
+    return roundedProgress;
+
+  } catch (err) {
+    console.error("❌ LỖI TÍNH TIẾN ĐỘ:", err);
+    return 0;
+  }
 };
 
-// 3. LẤY CHI TIẾT PROJECT (Bao gồm cả Members từ tất cả Teams)
+// SỬA HÀM getProjectDetails - TÍNH PROGRESS TRƯỚC KHI TRẢ VỀ
+
 exports.getProjectDetails = async (req, res) => {
 	try {
 		const projectId = req.params.id;
+
+		// ✅ TÍNH LẠI PROGRESS TRƯỚC KHI LOAD
+		const calculatedProgress = await updateProjectProgress(projectId);
+
 		const project = await Project.findByPk(projectId, {
+			attributes: [
+				'id',
+				'name',
+				'description',
+				'leaderId',
+				'startDate',
+				'endDate',
+				'progress',
+				'workloadFactor',
+				'createdAt',
+				'updatedAt'
+			],
 			include: [
 				{ model: User, as: 'leader', attributes: ['id', 'name', 'email'] },
 				{
@@ -117,11 +146,92 @@ exports.getProjectDetails = async (req, res) => {
 		const result = project.toJSON();
 		result.members = Array.from(membersMap.values());
 
+		// ✅ ĐẢM BẢO PROGRESS ĐƯỢC CẬP NHẬT
+		result.progress = calculatedProgress;
+
+		// ✅ LOG
+		console.log(`📊 [API] Returning project #${projectId} with progress: ${result.progress}%`);
+
 		res.status(200).send(result);
+	} catch (error) {
+		console.error("Error getProjectDetails:", error);
+		res.status(500).send({ message: error.message });
+	}
+};
+
+// 1. TẠO PROJECT (Tự động tạo Team "General" cho Leader)
+exports.createProject = async (req, res) => {
+	try {
+		const leaderId = req.userId;
+		const project = await Project.create({
+			name: req.body.name,
+			description: req.body.description,
+			leaderId: leaderId,
+			startDate: new Date(),
+			progress: 0, // ✅ Khởi tạo progress = 0
+		});
+
+		// Tạo team mặc định
+		const team = await Team.create({
+			name: `${project.name} Core Team`,
+			projectId: project.id,
+			leaderId: leaderId,
+		});
+
+		// Thêm Leader vào team
+		await TeamMember.create({
+			teamId: team.id,
+			userId: leaderId,
+			role: 'subleader',
+		});
+
+		res.status(201).send(project);
 	} catch (error) {
 		res.status(500).send({ message: error.message });
 	}
 };
+
+// 2. LẤY PROJECT CỦA TÔI (Qua Leader ID hoặc qua Team Member)
+exports.getMyProjects = async (req, res) => {
+	try {
+		const userId = req.userId;
+
+		const user = await User.findByPk(userId, {
+			include: [
+				{
+					model: Project,
+					as: 'ledProjects',
+					// ✅ Đảm bảo trả về progress
+					attributes: ['id', 'name', 'description', 'startDate', 'endDate', 'progress', 'workloadFactor', 'createdAt', 'updatedAt']
+				},
+				{
+					model: Team,
+					as: 'teams',
+					include: [{
+						model: Project,
+						required: true,
+						// ✅ Đảm bảo trả về progress
+						attributes: ['id', 'name', 'description', 'startDate', 'endDate', 'progress', 'workloadFactor', 'createdAt', 'updatedAt']
+					}],
+				},
+			],
+		});
+
+		if (!user) return res.status(404).send({ message: 'User not found' });
+
+		const directProjects = user.ledProjects || [];
+		const teamProjects = user.teams.map((t) => t.project).filter((p) => p);
+
+		// Gộp và lọc trùng
+		const projectMap = new Map();
+		[...directProjects, ...teamProjects].forEach((p) => projectMap.set(p.id, p));
+
+		res.status(200).send(Array.from(projectMap.values()));
+	} catch (error) {
+		res.status(500).send({ message: error.message });
+	}
+};
+
 
 // 4. THÊM THÀNH VIÊN (Vào Team mặc định của Project)
 exports.addMember = async (req, res) => {
@@ -151,7 +261,7 @@ exports.addMember = async (req, res) => {
 	}
 };
 
-// 5. XÓA THÀNH VIÊN (Hàm này bị thiếu trước đó)
+// 5. XÓA THÀNH VIÊN
 exports.removeMember = async (req, res) => {
 	try {
 		const projectId = req.params.id;
@@ -169,7 +279,7 @@ exports.removeMember = async (req, res) => {
 		const result = await TeamMember.destroy({
 			where: {
 				userId: userIdToRemove,
-				teamId: { [Op.in]: teamIds }, // Xóa nếu thuộc bất kỳ team nào của project
+				teamId: { [Op.in]: teamIds },
 			},
 		});
 
@@ -181,4 +291,94 @@ exports.removeMember = async (req, res) => {
 	} catch (error) {
 		res.status(500).send({ message: error.message });
 	}
+};
+
+// 6. CẬP NHẬT PROJECT
+exports.updateProject = async (req, res) => {
+    const projectId = req.params.id;
+    const { name, description, endDate, workloadFactor } = req.body;
+
+    try {
+        const project = await Project.findByPk(projectId);
+        if (!project) {
+            return res.status(404).send({ message: "Project not found." });
+        }
+
+        // Kiểm tra quyền Leader
+        if (project.leaderId !== req.userId) {
+             return res.status(403).send({ message: "Access denied. Only the project leader can update project details." });
+        }
+
+        const updateData = {
+            name: name,
+            description: description,
+            endDate: endDate || null,
+
+            // Cập nhật workloadFactor
+            ...(typeof workloadFactor !== 'undefined' && {
+                workloadFactor: Math.min(2.0, Math.max(0.1, Number(workloadFactor)))
+            })
+        };
+
+        const [updated] = await Project.update(updateData, { where: { id: projectId } });
+
+        if (updated) {
+            const updatedProject = await Project.findByPk(projectId);
+
+            // ✅ LOG ĐỂ DEBUG
+            console.log(`✅ Project #${projectId} updated. Current progress: ${updatedProject.progress}%`);
+
+            return res.status(200).send({
+                message: "Project updated successfully.",
+                project: updatedProject
+            });
+        } else {
+            return res.status(200).send({ message: "Project retrieved, but no changes were applied." });
+        }
+    } catch (error) {
+        console.error("Error updating project:", error);
+        res.status(500).send({ message: error.message || "Server error while updating project." });
+    }
+};
+
+// ✅ 7. THÊM HÀM EXPORT WORKLOAD REPORT (Nếu bạn cần)
+exports.exportWorkloadReport = async (req, res) => {
+    try {
+        const projectId = req.params.id;
+
+        const project = await Project.findByPk(projectId, {
+            include: [
+                {
+                    model: Task,
+                    include: [
+                        { model: User, as: 'assignee', attributes: ['id', 'name', 'email'] }
+                    ]
+                }
+            ]
+        });
+
+        if (!project) {
+            return res.status(404).send({ message: 'Project not found.' });
+        }
+
+        // Tạo CSV data
+        let csvData = 'Task ID,Task Title,Assignee,Progress,Workload Weight,Status\n';
+
+        project.Tasks.forEach(task => {
+            const assigneeName = task.assignee ? task.assignee.name : 'Unassigned';
+            csvData += `${task.id},"${task.title}","${assigneeName}",${task.progress},${task.workloadWeight},${task.statusId}\n`;
+        });
+
+        // Thêm summary
+        csvData += `\n\nProject Progress,${project.progress}%\n`;
+        csvData += `Workload Factor,${project.workloadFactor}x\n`;
+
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="workload_report_${projectId}.csv"`);
+        res.status(200).send(csvData);
+
+    } catch (error) {
+        console.error('Error exporting workload report:', error);
+        res.status(500).send({ message: error.message || 'Error exporting report.' });
+    }
 };

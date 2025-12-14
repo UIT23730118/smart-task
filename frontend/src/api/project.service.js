@@ -35,6 +35,10 @@ const exportWorkloadReport = (projectId) => {
     });
 };
 
+const updateProject = (projectId, updateData) => {
+    return api.put(`/projects/${projectId}`, updateData, { headers: authHeader() });
+};
+
 const ProjectService = {
     getMyProjects,
     getProjectDetails, // Thêm
@@ -42,6 +46,7 @@ const ProjectService = {
     removeMember,      // Thêm
     createProject,
     exportWorkloadReport,
+    updateProject,
 };
 
 export default ProjectService;

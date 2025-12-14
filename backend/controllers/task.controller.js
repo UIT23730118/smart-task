@@ -11,6 +11,7 @@ const Team = db.teams;
 const Resolution = db.resolutions;
 const Notification = db.notifications;
 
+
 // Tạo một Task mới
 exports.createTask = async (req, res) => {
   try {
@@ -27,6 +28,7 @@ exports.createTask = async (req, res) => {
       progress,
       requiredSkills,
       subtasksTemplate,
+      workloadWeight,
     } = req.body;
 
     // 1. Kiểm tra quyền (User là Member trong Team hoặc là Leader của Project)
@@ -93,9 +95,8 @@ exports.createTask = async (req, res) => {
       progress: progress || 0,
       requiredSkills: requiredSkills || null,
       subtasksTemplate: subtasksTemplate || [],
+      workloadWeight: Number(workloadWeight) || 1,
     });
-
-    // 4. Gửi Email thông báo phân công
 
     // 5. Tạo Thông báo (Notifications)
     const project = await Project.findByPk(projectId);
@@ -122,6 +123,7 @@ exports.createTask = async (req, res) => {
         isRead: false
       });
     }
+    await updateProjectProgress(projectId);
 
     res.status(201).send(task);
   } catch (error) {
@@ -139,7 +141,7 @@ exports.getTaskDetails = async (req, res) => {
         { model: Project, attributes: ["id", "name"] },
         { model: User, as: "assignee", attributes: ["id", "name", "email"] },
         { model: User, as: "reporter", attributes: ["id", "name", "email"] },
-        { model: Status, attributes: ["id", "name", "color"] },
+        { model: Status, as: "status", attributes: ["id", "name", "color"] },
         { model: IssueType, as: "type", attributes: ["id", "name"] },
         { model: Resolution, attributes: ["id", "name"] },
         // Lấy Comments và thông tin người comment
@@ -183,13 +185,13 @@ exports.updateTask = async (req, res) => {
     let skillsToSave = req.body.requiredSkills;
 
     if (typeof skillsToSave === 'string') {
-        // 💡 FIX CỐT LÕI: Kiểm tra và loại bỏ dấu nháy kép ở hai đầu (Lỗi stringify kép)
-        if (skillsToSave.startsWith('"') && skillsToSave.endsWith('"')) {
-            skillsToSave = skillsToSave.substring(1, skillsToSave.length - 1);
-        }
+      // 💡 FIX CỐT LÕI: Kiểm tra và loại bỏ dấu nháy kép ở hai đầu (Lỗi stringify kép)
+      if (skillsToSave.startsWith('"') && skillsToSave.endsWith('"')) {
+        skillsToSave = skillsToSave.substring(1, skillsToSave.length - 1);
+      }
     } else {
-        // Nếu không phải chuỗi (null/undefined), giữ nguyên
-        skillsToSave = skillsToSave || null;
+      // Nếu không phải chuỗi (null/undefined), giữ nguyên
+      skillsToSave = skillsToSave || null;
     }
 
     const updatedData = {
@@ -203,20 +205,23 @@ exports.updateTask = async (req, res) => {
       progress: req.body.progress,
       requiredSkills: skillsToSave,
       subtasksTemplate: req.body.subtasksTemplate,
+      workloadWeight: req.body.workloadWeight,
     };
 
     // Xóa các field undefined/null (Không gửi lên body)
     Object.keys(updatedData).forEach((key) => {
       // Chỉ xóa nếu giá trị là UNDEFINED. Giữ lại NULL hoặc chuỗi rỗng ("") nếu Frontend gửi.
-      if (updatedData[key] === undefined) { 
-          delete updatedData[key];
+      if (updatedData[key] === undefined) {
+        delete updatedData[key];
       }
     });
 
     await task.update(updatedData);
+    if (task.projectId) {
+        console.log(`>>> [DEBUG] Đang tính lại tiến độ cho Project #${task.projectId}...`);
+        await updateProjectProgress(task.projectId);
+    }
     const newAssigneeId = task.assigneeId;
-
-    // 1. GỬI EMAIL: Chỉ gửi khi ID thay đổi và người mới được gán không phải là null
 
     // 2. LOGIC THÔNG BÁO UPDATE
     const project = await Project.findByPk(task.projectId);
@@ -290,6 +295,11 @@ exports.updateTaskStatus = async (req, res) => {
     task.statusId = newStatusId;
     await task.save();
 
+    if (task.projectId) {
+      console.log(`[KANBAN] Recalculate progress for project ${task.projectId}`);
+      await updateProjectProgress(task.projectId);
+}
+
     // 1. Logic Notification khi status thay đổi
     if (newStatusId !== oldStatusId && task.assigneeId && task.assigneeId !== updaterId) {
       await Notification.create({
@@ -349,6 +359,8 @@ exports.deleteTask = async (req, res) => {
         isRead: false
       });
     }
+    await updateProjectProgress(task.projectId);
+
     // -----------------------------
 
     return res.status(200).send({ message: "Task deleted successfully." });
@@ -560,8 +572,9 @@ exports.findAll = async (req, res) => {
       where: condition,
       include: [
         { model: User, as: "assignee", attributes: ["id", "name"] },
-        { model: Status, attributes: ["id", "name", "color"] },
-        { model: IssueType, as: "type", attributes: ["id", "name"] }
+        { model: Status, as: "status", attributes: ["id", "name", "color"] },
+        { model: IssueType, as: "type", attributes: ["id", "name"] },
+        { model: Project, attributes: ["id", "name"] }
       ],
       order: [['createdAt', 'DESC']]
     });

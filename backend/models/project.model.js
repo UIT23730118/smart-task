@@ -13,6 +13,11 @@ module.exports = (sequelize, Sequelize) => {
             type: Sequelize.INTEGER
             // (Đã được định nghĩa quan hệ ở index.js)
         },
+        workloadFactor: {
+            type: Sequelize.FLOAT,
+            defaultValue: 1.0,
+            allowNull: false
+        },
         startDate: {
             type: Sequelize.DATE,
             defaultValue: Sequelize.NOW

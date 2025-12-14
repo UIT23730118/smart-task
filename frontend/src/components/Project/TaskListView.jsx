@@ -1,3 +1,5 @@
+// /components/Project/TaskListView.jsx
+
 import React from "react";
 // Cần cài: npm install react-icons
 import { FaBug, FaCheckSquare, FaBookmark, FaBolt } from "react-icons/fa";
@@ -6,9 +8,9 @@ import { Table, Tag, Avatar } from "antd";
 import { UserOutlined } from '@ant-design/icons';
 
 
-const TaskListView = ({ tasks, onTaskClick }) => {
+const TaskListView = ({ tasks, onTaskClick, statuses }) => {
 
-  // Helper chọn icon theo Type
+  // Helper chọn icon theo Type (GIỮ NGUYÊN)
   const getTypeIcon = (typeId) => {
     // Giả sử: 1=Task, 2=Bug, 3=Story
     switch (typeId) {
@@ -23,7 +25,7 @@ const TaskListView = ({ tasks, onTaskClick }) => {
     }
   };
 
-  // Helper màu Priority
+  // Helper màu Priority (GIỮ NGUYÊN)
   const getPriorityColor = (p) => {
     switch (p) {
       case "Critical":
@@ -38,21 +40,33 @@ const TaskListView = ({ tasks, onTaskClick }) => {
     }
   };
 
-  // Helper màu Status tag
+  // 💡 CẬP NHẬT: Helper màu Status tag
   const getStatusTagColor = (statusName) => {
+    if (!statusName) return "default";
+
     const name = statusName.toLowerCase();
-    if (
-      name.includes("done") ||
-      name.includes("closed") ||
-      name.includes("resolved")
-    )
+
+    // Trạng thái HOÀN THÀNH (success: Xanh lá)
+    if (name.includes("done") || name.includes("closed") || name.includes("resolved")) {
       return "success";
-    if (name.includes("progress")) return "processing";
-    if (name.includes("todo") || name.includes("open")) return "default";
-    return "default";
+    }
+
+    // Trạng thái ĐANG LÀM/TIẾN HÀNH (processing: Xanh dương)
+    if (name.includes("in progress") || name.includes("developing") || name.includes("testing")) {
+      return "processing";
+    }
+
+    // Trạng thái CHƯA LÀM (default: Xám)
+    if (name.includes("todo") || name.includes("open") || name.includes("backlog")) {
+      return "default";
+    }
+
+    // Trạng thái khác (warning: Vàng)
+    return "warning";
   };
 
-  // Helper để phân tích Required Skills thành mảng tags
+
+  // Helper để phân tích Required Skills thành mảng tags (GIỮ NGUYÊN)
   const getRequiredSkillsTags = (requiredSkills) => {
     if (!requiredSkills) return [];
 
@@ -89,14 +103,23 @@ const TaskListView = ({ tasks, onTaskClick }) => {
     },
     {
       title: 'Status',
-      dataIndex: ['status', 'name'],
-      key: 'status',
+      // dataIndex này lấy task.status.name
+      dataIndex: 'statusId',
+      key: 'statusId',
       width: 120,
-      render: (statusName) => (
-        <Tag color={getStatusTagColor(statusName || "")}>
-          {(statusName || "Unknown").toUpperCase()}
-        </Tag>
-      ),
+      render: (statusId) => {
+        // Tìm trạng thái trong danh sách statuses được truyền vào
+        const statusObject = statuses?.find(s => s.id === statusId);
+        
+        // Lấy tên trạng thái (hoặc mặc định là Unknown nếu không tìm thấy)
+        const statusName = statusObject ? statusObject.name : "Unknown";
+        
+        return (
+          <Tag color={getStatusTagColor(statusName || "")}>
+            {(statusName).toUpperCase()}
+          </Tag>
+        );
+      }
     },
     {
       title: 'Required Skills',

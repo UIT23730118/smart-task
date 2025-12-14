@@ -3,6 +3,9 @@ import ProjectService from "../api/project.service";
 import MemberManager from "../components/Project/MemberManager";
 import { useAuth } from "../context/AuthContext";
 import { FaUsers, FaExchangeAlt } from "react-icons/fa";
+import { Card, Select, Spin, Typography } from "antd";
+
+const { Title, Paragraph } = Typography;
 
 const Team = () => {
   const { user } = useAuth();
@@ -10,105 +13,80 @@ const Team = () => {
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [currentProjectMembers, setCurrentProjectMembers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [memberLoading, setMemberLoading] = useState(false);
 
-  // 1. Load the user's project list
   useEffect(() => {
-    const fetchProjects = async () => {
+    const loadProjects = async () => {
       try {
         const res = await ProjectService.getMyProjects();
         setProjects(res.data);
-
-        // Default: select first project if exists
-        if (res.data.length > 0) {
-          setSelectedProjectId(res.data[0].id);
-        }
-      } catch (error) {
-        console.error("Error fetching projects:", error);
+        if (res.data.length > 0) setSelectedProjectId(res.data[0].id);
+      } catch (err) {
+        console.error("Project load error:", err);
       } finally {
         setLoading(false);
       }
     };
-    fetchProjects();
+    loadProjects();
   }, []);
 
-  // 2. Load project members when selected project changes
-  const fetchMembers = async () => {
+  const loadMembers = async () => {
     if (!selectedProjectId) return;
     try {
+      setMemberLoading(true);
       const res = await ProjectService.getProjectDetails(selectedProjectId);
-      setCurrentProjectMembers(res.data.members);
-    } catch (error) {
-      console.error("Error fetching members:", error);
+      setCurrentProjectMembers(res.data.members || []);
+    } catch (err) {
+      console.error("Load member error:", err);
+    } finally {
+      setMemberLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchMembers();
+    loadMembers();
   }, [selectedProjectId]);
 
-  const handleProjectChange = (e) => {
-    setSelectedProjectId(e.target.value);
-  };
-
-  if (loading) return <div className="p-4">Loading...</div>;
+  if (loading) return <Spin className="p-4" />;
 
   return (
-    <div style={{ padding: "20px" }}>
-      <div className="page-header">
-        <div>
-          <h1>Team Management</h1>
-          <p>Manage members across your projects</p>
-        </div>
-      </div>
+    <div style={{ padding: 20 }}>
+      <Title level={2}>Team Management</Title>
+      <Paragraph>Manage all members in your project using Ant Design UI.</Paragraph>
 
-      {/* Project Selector */}
-      <div className="card" style={{ marginBottom: "20px", padding: "20px" }}>
-        <label
-          style={{ fontWeight: "bold", display: "block", marginBottom: "10px" }}
-        >
+      <Card style={{ marginBottom: 20 }}>
+        <label style={{ fontWeight: "bold" }}>
           <FaExchangeAlt /> Select Project:
         </label>
-        <select
-          className="form-control"
+        <Select
+          style={{ width: 300, marginTop: 10 }}
           value={selectedProjectId}
-          onChange={handleProjectChange}
-          style={{ maxWidth: "400px" }}
+          onChange={(value) => setSelectedProjectId(value)}
         >
           {projects.map((p) => (
-            <option key={p.id} value={p.id}>
+            <Select.Option key={p.id} value={p.id}>
               {p.name}
-            </option>
+            </Select.Option>
           ))}
-        </select>
-      </div>
+        </Select>
+      </Card>
 
-      {/* Member Manager Component */}
-      {selectedProjectId ? (
-        <div className="card" style={{ padding: "20px" }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "10px",
-              marginBottom: "20px",
-            }}
-          >
-            <FaUsers size={24} color="#007bff" />
-            <h3 style={{ margin: 0 }}>Member List</h3>
-          </div>
+      <Card>
+        <Title level={4}>
+          <FaUsers style={{ marginRight: 10 }} /> Member List
+        </Title>
 
+        {memberLoading ? (
+          <Spin />
+        ) : (
           <MemberManager
             members={currentProjectMembers}
             projectId={selectedProjectId}
-            onMemberChanged={fetchMembers}
+            onMemberChanged={loadMembers}
             userRole={user.role}
           />
-        </div>
-      ) : (
-        <div className="empty-state">
-          <p>You are not part of any project yet.</p>
-        </div>
-      )}
+        )}
+      </Card>
     </div>
   );
 };

@@ -37,6 +37,15 @@ db.taskAssignments = require('./taskAssignment.model.js')(sequelize, Sequelize);
 db.users.hasMany(db.projects, { foreignKey: 'leaderId', as: 'ledProjects' });
 db.projects.belongsTo(db.users, { foreignKey: 'leaderId', as: 'leader' });
 
+db.tasks.belongsTo(db.projects, {
+    foreignKey: 'projectId',
+    as: 'project' // 💡 Đảm bảo tên alias là 'project' để logic Workload ở dưới hoạt động
+});
+db.projects.hasMany(db.tasks, {
+    foreignKey: 'projectId',
+    as: 'tasks'
+});
+
 // 2. User - Team - Project (Thành viên tham gia qua Team)
 db.projects.hasMany(db.teams, { foreignKey: 'projectId', onDelete: 'CASCADE' });
 db.teams.belongsTo(db.projects, { foreignKey: 'projectId' });
