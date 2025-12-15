@@ -1,22 +1,28 @@
+///src/pages/Projects.jsx
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import ProjectService from '../api/project.service';
+import { useNavigate } from 'react-router-dom';
 
 // Ant Design
-import { Typography, Button, Row, Col, Spin, Result, Empty, message } from 'antd';
-import { PlusOutlined, FolderOpenOutlined } from '@ant-design/icons';
+import { Typography, Button, Row, Col, Spin, Result, Empty, message, Modal } from 'antd';
+import { PlusOutlined, FolderOpenOutlined, CloudUploadOutlined } from '@ant-design/icons';
 
 import ProjectCard from '../components/Project/ProjectCard';
 import CreateProjectModal from '../components/Project/CreateProjectModal';
+import ProjectImporter from '../components/Project/ProjectImporter';
 
 const { Title, Text } = Typography;
 
 const Projects = () => {
     const { user } = useAuth();
+    const navigate = useNavigate();
+
     const [projects, setProjects] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
     const fetchProjects = async () => {
         setLoading(true);
@@ -36,11 +42,20 @@ const Projects = () => {
     }, []);
 
     const handleProjectCreated = () => {
-        fetchProjects(); // Reload project list
+        setIsCreateModalOpen(false);
+        fetchProjects();
+    };
+
+    const handleProjectImported = (newProjectId) => {
+        setIsImportModalOpen(false);
+        fetchProjects();
+
+        message.success('Project imported successfully. Redirecting...');
+        navigate(`/projects/${newProjectId}`);
     };
 
     return (
-        <div style={{ padding: '24px'}}>
+        <div style={{ padding: '24px' }}>
             {/* Header */}
             <Row justify="space-between" align="middle" style={{ marginBottom: 24 }}>
                 <Col>
@@ -48,15 +63,26 @@ const Projects = () => {
                     <Text type="secondary">Manage and track all your projects</Text>
                 </Col>
 
-                <Col>
+                <Col style={{ display: 'flex', gap: 10 }}>
                     {user.role === 'leader' && (
-                        <Button
-                            type="primary"
-                            icon={<PlusOutlined />}
-                            onClick={() => setIsModalOpen(true)}
-                        >
-                            New Project
-                        </Button>
+                        <>
+                            {/* Import Button */}
+                            <Button
+                                icon={<CloudUploadOutlined />}
+                                onClick={() => setIsImportModalOpen(true)}
+                            >
+                                Import Project
+                            </Button>
+
+                            {/* Create New Project Button */}
+                            <Button
+                                type="primary"
+                                icon={<PlusOutlined />}
+                                onClick={() => setIsCreateModalOpen(true)}
+                            >
+                                New Project
+                            </Button>
+                        </>
                     )}
                 </Col>
             </Row>
@@ -79,7 +105,7 @@ const Projects = () => {
                     ))}
                 </Row>
             ) : (
-                <div style={{ padding: 40 }}>
+                <div style={{ padding: 40, textAlign: 'center' }}>
                     <Empty
                         description={
                             <span style={{ fontSize: 16 }}>
@@ -92,12 +118,28 @@ const Projects = () => {
                 </div>
             )}
 
-            {/* Modal */}
-            {isModalOpen && (
+            {/* Create Project Modal */}
+            {isCreateModalOpen && (
                 <CreateProjectModal
-                    onClose={() => setIsModalOpen(false)}
+                    onClose={() => setIsCreateModalOpen(false)}
                     onProjectCreated={handleProjectCreated}
                 />
+            )}
+
+            {/* Import Project Modal */}
+            {isImportModalOpen && (
+                <Modal
+                title="Import Project từ JSON"
+                open={isImportModalOpen}
+                onCancel={() => setIsImportModalOpen(false)}
+                footer={null} // Không cần footer vì nút Import nằm trong ProjectImporter
+            >
+                <ProjectImporter 
+                    onImportSuccess={handleProjectImported}
+                    // Truyền thêm prop để component biết nó cần đóng Modal
+                    onClose={() => setIsImportModalOpen(false)} 
+                />
+            </Modal>
             )}
         </div>
     );

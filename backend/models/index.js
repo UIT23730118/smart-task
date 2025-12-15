@@ -30,6 +30,7 @@ db.backups = require('./backup.model.js')(sequelize, Sequelize);
 db.overdueAlerts = require('./overdueAlert.model.js')(sequelize, Sequelize);
 db.userPerformance = require('./userPerformance.model.js')(sequelize, Sequelize);
 db.taskAssignments = require('./taskAssignment.model.js')(sequelize, Sequelize);
+db.taskDependencies = require('./taskDependency.model.js')(sequelize, Sequelize);
 
 // --- ASSOCIATIONS (QUAN HỆ) ---
 
@@ -112,6 +113,33 @@ db.tasks.hasMany(db.notifications, { foreignKey: 'taskId', onDelete: 'CASCADE' }
 db.notifications.belongsTo(db.tasks, {
   foreignKey: 'taskId',
   as: 'task'
+});
+
+// 1. Quan hệ Team - User (Leader)
+// Quan trọng: Phải có dòng này thì mới dùng được "as: 'leader'" trong controller
+db.teams.belongsTo(db.users, { foreignKey: "leaderId", as: "leader" });
+
+// 2. Quan hệ Team - TeamMember - User
+db.teams.hasMany(db.teamMembers, { foreignKey: "teamId" });
+db.teamMembers.belongsTo(db.teams, { foreignKey: "teamId" });
+
+db.users.hasMany(db.teamMembers, { foreignKey: "userId" });
+db.teamMembers.belongsTo(db.users, { foreignKey: "userId" });
+
+// 11. Task có nhiều cha (Predecessors)
+db.tasks.belongsToMany(db.tasks, {
+  through: db.taskDependencies,
+  as: "Predecessors",
+  foreignKey: "successorId",
+  otherKey: "predecessorId"
+});
+
+// 12. Task có nhiều con (Successors)
+db.tasks.belongsToMany(db.tasks, {
+  through: db.taskDependencies,
+  as: "Successors",
+  foreignKey: "predecessorId",
+  otherKey: "successorId"
 });
 
 module.exports = db;

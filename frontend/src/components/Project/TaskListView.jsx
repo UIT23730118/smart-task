@@ -4,8 +4,8 @@ import React from "react";
 // Cần cài: npm install react-icons
 import { FaBug, FaCheckSquare, FaBookmark, FaBolt } from "react-icons/fa";
 // Import các component Ant Design cần thiết
-import { Table, Tag, Avatar } from "antd";
-import { UserOutlined } from '@ant-design/icons';
+import { Table, Tag, Avatar, Tooltip } from "antd";
+import { UserOutlined, ClockCircleOutlined, WarningOutlined  } from '@ant-design/icons';
 
 
 const TaskListView = ({ tasks, onTaskClick, statuses }) => {
@@ -65,6 +65,13 @@ const TaskListView = ({ tasks, onTaskClick, statuses }) => {
     return "warning";
   };
 
+  // Helper màu cho Slack (Độ trễ)
+  const getSlackColor = (slack) => {
+    if (slack === 0 || slack === undefined) return "red"; // Critical
+    if (slack <= 2) return "orange"; // Nguy hiểm
+    return "green"; // An toàn
+  };
+
 
   // Helper để phân tích Required Skills thành mảng tags (GIỮ NGUYÊN)
   const getRequiredSkillsTags = (requiredSkills) => {
@@ -100,6 +107,74 @@ const TaskListView = ({ tasks, onTaskClick, statuses }) => {
       // Dùng ellipsis để cắt nếu tiêu đề quá dài
       ellipsis: true,
       sorter: (a, b) => a.title.localeCompare(b.title),
+      render: (text, record) => (
+        <Tooltip title={text}>
+          <span style={{ fontWeight: record.isCritical ? 'bold' : 'normal' }}>{text}</span>
+        </Tooltip>
+      ),
+    },
+    {
+      title: 'Prev Task',
+      key: 'deps',
+      width: 100,
+      render: (_, record) => (
+        <div>
+          {record.Predecessors && record.Predecessors.length > 0 ? (
+            record.Predecessors.map(p => (
+              <Tag key={p.id} color="geekblue" style={{ marginRight: 2 }}>#{p.id}</Tag>
+            ))
+          ) : (
+            <span style={{ color: '#ccc', fontSize: '11px' }}>—</span>
+          )}
+        </div>
+      )
+    },
+    // 🔥 CỘT MỚI: CPM INFO (ES/EF/LS/LF)
+    {
+      title: 'CPM (Days)',
+      key: 'cpm',
+      width: 160,
+      render: (_, record) => (
+        <div style={{ fontSize: '11px', lineHeight: '1.4', fontFamily: 'monospace' }}>
+          <div style={{ color: '#1890ff' }}>
+            ES:{record.es ?? '?'} ➝ EF:{record.ef ?? '?'}
+          </div>
+          <div style={{ color: '#722ed1' }}>
+            LS:{record.ls ?? '?'} ➝ LF:{record.lf ?? '?'}
+          </div>
+        </div>
+      )
+    },
+    // 🔥 CỘT MỚI: SLACK (Độ trễ cho phép)
+    {
+      title: 'Slack',
+      dataIndex: 'slack',
+      key: 'slack',
+      width: 90,
+      align: 'center',
+      render: (slack, record) => (
+        <Tag color={getSlackColor(record.isCritical ? 0 : slack)}>
+          {record.isCritical ? "CRITICAL" : `${slack}d`}
+        </Tag>
+      )
+    },
+    {
+      title: 'Status',
+      dataIndex: 'statusId',
+      key: 'statusId',
+      width: 100,
+      render: (statusId) => {
+        const statusObject = statuses?.find(s => s.id === statusId);
+        const statusName = statusObject ? statusObject.name : "Unknown";
+        return <Tag color={getStatusTagColor(statusName)}>{statusName.toUpperCase()}</Tag>;
+      }
+    },
+    {
+      title: 'Priority',
+      dataIndex: 'priority',
+      key: 'priority',
+      width: 90,
+      render: (priority) => <Tag color={getPriorityColor(priority)}>{priority}</Tag>,
     },
     {
       title: 'Status',
