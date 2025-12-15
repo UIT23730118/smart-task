@@ -53,4 +53,10 @@ module.exports = function (app) {
         [authJwt.verifyToken, authJwt.isLeader], // Tốt nhất nên dùng authJwt.isProjectLeader
         controller.updateProject
     );
+
+    app.get(
+        "/api/projects/:id/stats",
+        [authJwt.verifyToken],
+        controller.getProjectStats
+    );
 };

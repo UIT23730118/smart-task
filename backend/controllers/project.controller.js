@@ -410,14 +410,14 @@ exports.exportWorkloadReport = async (req, res) => {
 				{
 					model: Task,
 					include: [
-						{ model: User, as: 'assignee', attributes: ['id', 'name', 'email'] }
+						{model: User, as: 'assignee', attributes: ['id', 'name', 'email']}
 					]
 				}
 			]
 		});
 
 		if (!project) {
-			return res.status(404).send({ message: 'Project not found.' });
+			return res.status(404).send({message: 'Project not found.'});
 		}
 
 		// Tạo CSV data
@@ -438,6 +438,89 @@ exports.exportWorkloadReport = async (req, res) => {
 
 	} catch (error) {
 		console.error('Error exporting workload report:', error);
-		res.status(500).send({ message: error.message || 'Error exporting report.' });
+		res.status(500).send({message: error.message || 'Error exporting report.'});
 	}
+};
+	// 👇 HÀM MỚI: Lấy thống kê chi tiết của 1 dự án để xuất báo cáo
+exports.getProjectStats = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const userId = req.userId; // Lấy từ middleware verifyToken
+
+        // 1. Lấy thông tin dự án
+        const project = await Project.findByPk(id);
+        if (!project) return res.status(404).send({ message: "Project not found" });
+
+        // 🛡️ SECURITY CHECK: Chỉ Leader mới được xem báo cáo này
+        // Nếu không phải leader -> Trả về 403
+        if (project.leaderId !== Number(userId)) {
+            console.log(`❌ Access Denied: User ${userId} is not leader of Project ${id}`);
+            return res.status(403).send({ message: "Access denied. Only project leader can view stats." });
+        }
+
+        // 2. Thống kê Task
+        const tasks = await Task.findAll({ where: { projectId: id } });
+
+        const stats = {
+            total: tasks.length,
+            todo: tasks.filter(t => t.statusId && t.progress === 0).length, // Hoặc check theo status name nếu cấu hình
+            inProgress: tasks.filter(t => t.progress > 0 && t.progress < 100).length,
+            done: tasks.filter(t => t.progress === 100).length, // Cách check Done an toàn nhất
+            late: tasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && t.progress < 100).length
+        };
+
+        // 3. Thống kê Workload
+        const teams = await Team.findAll({
+            where: { projectId: id },
+            attributes: ['id']
+        });
+        const teamIds = teams.map(t => t.id);
+
+        if (teamIds.length === 0) {
+             return res.status(200).send({ project: project.name, stats, workload: [] });
+        }
+
+        const memberStats = await TeamMember.findAll({
+            where: { teamId: { [Op.in]: teamIds } },
+            include: [{
+                model: User,
+                attributes: ['id', 'name', 'email'] // Lấy thêm ID để so sánh chính xác
+            }]
+        });
+
+        const workload = [];
+        const processedUserIds = new Set();
+
+        for (const m of memberStats) {
+            // Check m.user tồn tại để tránh crash
+            if (m.user && !processedUserIds.has(m.user.id)) {
+                // Đếm task được assign cho user này trong dự án
+                const userTaskCount = await Task.count({
+                    where: { projectId: id, assigneeId: m.user.id }
+                });
+
+                // Đếm task đã xong (progress = 100 hoặc status DONE tùy db của bạn)
+                // Ở đây mình dùng progress 100 cho an toàn
+                const userDoneCount = await Task.count({
+                    where: { projectId: id, assigneeId: m.user.id, progress: 100 }
+                });
+
+                processedUserIds.add(m.user.id);
+
+                workload.push({
+                    name: m.user.name,
+                    email: m.user.email,
+                    totalTasks: userTaskCount,
+                    completedTasks: userDoneCount,
+                    role: m.role
+                });
+            }
+        }
+
+        res.status(200).send({ project: project.name, stats, workload });
+
+    } catch (error) {
+        console.error("STATS ERROR:", error);
+        res.status(500).send({ message: error.message });
+    }
 };
