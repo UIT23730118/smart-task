@@ -40,7 +40,7 @@ const Projects = () => {
     };
 
     return (
-        <div style={{ padding: '24px', fontFamily: 'sans-serif' }}>
+        <div style={{ padding: '24px'}}>
             {/* Header */}
             <Row justify="space-between" align="middle" style={{ marginBottom: 24 }}>
                 <Col>

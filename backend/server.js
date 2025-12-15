@@ -33,6 +33,7 @@ require('./routes/dashboard.routes.js')(app)
 require('./routes/report.routes')(app);
 require('./routes/user.routes')(app);
 require('./routes/notification.routes')(app);
+require('./routes/team.routes')(app);
 // Chúng ta sẽ thêm các route khác (task, project) ở đây sau
 
 // Cài đặt PORT

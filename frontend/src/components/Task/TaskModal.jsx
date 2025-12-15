@@ -13,6 +13,8 @@ import {
   MinusCircleOutlined
 } from "@ant-design/icons";
 import dayjs from "dayjs";
+
+// Import isSameOrAfter plugin cho Day.js
 import isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
 
 import TaskService from "../../api/task.service";
@@ -22,13 +24,12 @@ dayjs.extend(isSameOrAfter);
 const { TextArea } = Input;
 const { Option } = Select;
 const { Dragger } = Upload;
-const { Text } = Typography;
 
 const TaskModal = ({
   taskId,
   projectId,
-  members = [], // Fix lỗi undefined
-  statuses = [], // Fix lỗi undefined
+  members = [],
+  statuses = [],
   onClose,
   onTaskChanged,
   onTaskRefreshed,
@@ -134,7 +135,7 @@ const TaskModal = ({
             startDate: t.startDate ? dayjs(t.startDate) : null,
             dueDate: t.dueDate ? dayjs(t.dueDate) : null,
             progress: t.progress || 0,
-            subtasks: parsedSubtasks, // Load subtasks
+            subtasks: parsedSubtasks,
             requiredSkills: requiredSkillsArray, // PHẢI LÀ MẢNG
             workloadWeight: t.workloadWeight || 1,
           });
@@ -237,8 +238,8 @@ const TaskModal = ({
       message.success(isEditMode ? "Task updated successfully!" : "Task created successfully!");
       onTaskChanged();
       if (onTaskRefreshed) {
-      onTaskRefreshed();
-    }
+        onTaskRefreshed();
+      }
       onClose();
     } catch (err) {
       if (err.errorFields) {
@@ -498,10 +499,10 @@ const TaskModal = ({
             <TextArea rows={6} placeholder="Detailed description..." />
           </Form.Item>
 
-          {/* Subtask Section */}
           <Divider orientation="left" plain><UnorderedListOutlined /> Subtasks</Divider>
           <SubtasksList />
 
+          {/* COMMENTS (GIỮ NGUYÊN) */}
           {isEditMode && (
             <div style={{ marginTop: 30 }}>
               <Divider orientation="left">Comments</Divider>
@@ -627,7 +628,7 @@ const TaskModal = ({
             <p style={{ fontSize: '12px', color: '#999', marginTop: 5 }}>Enter skills separated by commas or pressing Enter.</p>
           </Form.Item>
 
-          <Form.Item label="Workload Weight (Point(s))"
+          <Form.Item label="Workload Weight (Point(s))" 
              tooltip="Estimate the complexity/time for this Task (Scale 1-10)"
              name="workloadWeight" // Gán name ở đây
              rules={[{ required: true, message: 'Please enter workload weight' }]}
@@ -705,8 +706,8 @@ const TaskModal = ({
       onOk={handleSubmit} // Main Save/Update function
       confirmLoading={loading}
       width="90%"
+      style={{ top: 20}}
       maskClosable={false}
-      style={{ top: 20, fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" }}
       bodyStyle={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" }}
       footer={[
         isEditMode && (

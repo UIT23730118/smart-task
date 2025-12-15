@@ -3,6 +3,10 @@
 import api from './axios';
 import authHeader from './auth.header';
 
+const getAllUsers = () => {
+  return api.get(`/users`, { headers: authHeader() });
+};
+
 const getAssignmentRules = (userId) => {
     // API: GET /api/users/:userId/rules
     return api.get(`/users/${userId}/rules`, { headers: authHeader() });
@@ -44,6 +48,7 @@ const getGlobalWorkloadSummary = () => {
 };
 
 const UserService = {
+    getAllUsers,
     getAssignmentRules,
     updateAssignmentRules,
     getUserExpertise,

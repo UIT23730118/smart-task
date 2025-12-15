@@ -16,6 +16,7 @@ import Projects from './pages/Projects';
 import Team from "./pages/Team";
 import ProjectDetail from './pages/ProjectDetail';
 import GlobalWorkloadPage from './pages/admin/GlobalWorkloadPage';
+import TeamManagement from "./pages/TeamManagement";
 
 function App() {
   return (
@@ -35,6 +36,7 @@ function App() {
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/projects" element={<Projects />} />
               <Route path="/team" element={<Team />} />
+              <Route path="/team-management/:id" element={<TeamManagement />} />
               <Route path="/project/:id" element={<ProjectDetail />} />
               <Route path="/workload-summary" element={<GlobalWorkloadPage />} />
               {/* Trang chủ mặc định là /dashboard */}

@@ -104,7 +104,7 @@ db.comments.belongsTo(db.tasks, {
   as: 'task'
 });
 
-// để load user comment
+// 9. để load user comment
 db.users.hasMany(db.comments, { foreignKey: 'userId', as: 'userComments' });
 db.comments.belongsTo(db.users, { foreignKey: 'userId', as: 'author' });
 
@@ -113,5 +113,16 @@ db.notifications.belongsTo(db.tasks, {
   foreignKey: 'taskId',
   as: 'task'
 });
+// 10.
+// 1. Quan hệ Team - User (Leader)
+// Quan trọng: Phải có dòng này thì mới dùng được "as: 'leader'" trong controller
+db.teams.belongsTo(db.users, { foreignKey: "leaderId", as: "leader" });
+
+// 2. Quan hệ Team - TeamMember - User
+db.teams.hasMany(db.teamMembers, { foreignKey: "teamId" });
+db.teamMembers.belongsTo(db.teams, { foreignKey: "teamId" });
+
+db.users.hasMany(db.teamMembers, { foreignKey: "userId" });
+db.teamMembers.belongsTo(db.users, { foreignKey: "userId" });
 
 module.exports = db;

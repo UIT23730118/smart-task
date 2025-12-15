@@ -11,9 +11,14 @@ const getGanttTasks = () => {
     return api.get('/dashboard/gantt', { headers: authHeader() });
 };
 
+const getGanttTasksWithMembers = () => {
+    return api.get('/dashboard/gantt-tasks', { headers: authHeader() });
+};
+
 const DashboardService = {
     getDashboardStats,
     getGanttTasks,
+    getGanttTasksWithMembers,
 };
 
 export default DashboardService;

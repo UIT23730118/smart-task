@@ -152,6 +152,16 @@ exports.getMemberWorkload = async (userId) => {
     }
 };
 
+exports.getAllUsers = async (req, res) => {
+  try {
+    const users = await db.users.findAll({
+      attributes: ['id', 'name', 'email', 'role']
+    });
+    res.status(200).send(users);
+  } catch (error) {
+    res.status(500).send({ message: error.message });
+  }
+};
 // --- Bạn có thể thêm các hàm khác như getProfile, updateProfile ở đây ---
 // exports.getUserProfile = ...
 // exports.updateUserProfile = ...

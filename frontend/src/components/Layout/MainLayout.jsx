@@ -111,7 +111,6 @@ const MainLayout = () => {
                         justifyContent: 'flex-end',
                         alignItems: 'center',
                         gap: '10px',
-                        fontFamily: 'Inter, sans-serif',
                     }}
                 >
                     <NotificationBell />

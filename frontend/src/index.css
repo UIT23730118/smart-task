@@ -43,7 +43,6 @@ code {
   --bg-white: #ffffff;
   --border-color: #ddd;
   --font-family-sans-serif: 'Inter', sans-serif; /* Phông chữ chính: Inter */
-  --font-family-serif: 'Lora', serif; /* Phông chữ có chân: Lora */
   --font-size-base: 1rem;
   --line-height-base: 1.5;
 }

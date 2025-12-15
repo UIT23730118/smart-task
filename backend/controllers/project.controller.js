@@ -168,7 +168,7 @@ exports.createProject = async (req, res) => {
 			description: req.body.description,
 			leaderId: leaderId,
 			startDate: new Date(),
-			progress: 0, // ✅ Khởi tạo progress = 0
+			progress: 0,
 		});
 
 		// Tạo team mặc định
@@ -201,16 +201,14 @@ exports.getMyProjects = async (req, res) => {
 				{
 					model: Project,
 					as: 'ledProjects',
-					// ✅ Đảm bảo trả về progress
 					attributes: ['id', 'name', 'description', 'startDate', 'endDate', 'progress', 'workloadFactor', 'createdAt', 'updatedAt']
-				},
+				}, // Project mình làm Leader
 				{
 					model: Team,
-					as: 'teams',
+					as: 'teams', // Project mình tham gia qua Team
 					include: [{
 						model: Project,
 						required: true,
-						// ✅ Đảm bảo trả về progress
 						attributes: ['id', 'name', 'description', 'startDate', 'endDate', 'progress', 'workloadFactor', 'createdAt', 'updatedAt']
 					}],
 				},
@@ -232,6 +230,71 @@ exports.getMyProjects = async (req, res) => {
 	}
 };
 
+// 3. LẤY CHI TIẾT PROJECT (Bao gồm cả Members từ tất cả Teams)
+exports.getProjectDetails = async (req, res) => {
+	try {
+		const projectId = req.params.id;
+		const calculatedProgress = await updateProjectProgress(projectId);
+		const project = await Project.findByPk(projectId, {
+			attributes: [
+				'id',
+				'name',
+				'description',
+				'leaderId',
+				'startDate',
+				'endDate',
+				'progress',
+				'workloadFactor',
+				'createdAt',
+				'updatedAt'
+			],
+			include: [
+				{ model: User, as: 'leader', attributes: ['id', 'name', 'email'] },
+				{
+					model: Status,
+					required: false,
+					where: { [Op.or]: [{ projectId }, { projectId: null }] },
+					order: [['position', 'ASC']],
+				},
+				{
+					model: Task,
+					required: false,
+					include: [
+						{ model: User, as: 'assignee', attributes: ['id', 'name'] },
+						{ model: IssueType, as: 'type', attributes: ['id', 'name'] },
+					],
+				},
+			],
+		});
+
+		if (!project) return res.status(404).send({ message: 'Not found' });
+
+		// Lấy members từ bảng Teams
+		const teams = await Team.findAll({
+			where: { projectId },
+			include: [
+				{
+					model: User,
+					as: 'members',
+					attributes: ['id', 'name', 'email', 'skills'],
+					through: { attributes: ['role'] },
+				},
+			],
+		});
+
+		// Flatten members
+		const membersMap = new Map();
+		teams.forEach((t) => t.members.forEach((m) => membersMap.set(m.id, m)));
+
+		const result = project.toJSON();
+		result.members = Array.from(membersMap.values());
+		result.progress = calculatedProgress;
+
+		res.status(200).send(result);
+	} catch (error) {
+		res.status(500).send({ message: error.message });
+	}
+};
 
 // 4. THÊM THÀNH VIÊN (Vào Team mặc định của Project)
 exports.addMember = async (req, res) => {
@@ -261,7 +324,7 @@ exports.addMember = async (req, res) => {
 	}
 };
 
-// 5. XÓA THÀNH VIÊN
+// 5. XÓA THÀNH VIÊN (Hàm này bị thiếu trước đó)
 exports.removeMember = async (req, res) => {
 	try {
 		const projectId = req.params.id;
@@ -279,7 +342,7 @@ exports.removeMember = async (req, res) => {
 		const result = await TeamMember.destroy({
 			where: {
 				userId: userIdToRemove,
-				teamId: { [Op.in]: teamIds },
+				teamId: { [Op.in]: teamIds }, // Xóa nếu thuộc bất kỳ team nào của project
 			},
 		});
 
@@ -293,92 +356,88 @@ exports.removeMember = async (req, res) => {
 	}
 };
 
-// 6. CẬP NHẬT PROJECT
 exports.updateProject = async (req, res) => {
-    const projectId = req.params.id;
-    const { name, description, endDate, workloadFactor } = req.body;
+	const projectId = req.params.id;
+	// Lấy các trường cần cập nhật, bao gồm workloadFactor
+	const { name, description, endDate, workloadFactor } = req.body;
+	try {
+		const project = await Project.findByPk(projectId);
+		if (!project) {
+			return res.status(404).send({ message: "Project not found." });
+		}
 
-    try {
-        const project = await Project.findByPk(projectId);
-        if (!project) {
-            return res.status(404).send({ message: "Project not found." });
-        }
+		// 💡 Giả định kiểm tra quyền Leader ở đây (hoặc dùng middleware)
+		if (project.leaderId !== req.userId) {
+			return res.status(403).send({ message: "Access denied. Only the project leader can update project details." });
+		}
 
-        // Kiểm tra quyền Leader
-        if (project.leaderId !== req.userId) {
-             return res.status(403).send({ message: "Access denied. Only the project leader can update project details." });
-        }
+		const updateData = {
+			name: name,
+			description: description,
+			endDate: endDate || null,
 
-        const updateData = {
-            name: name,
-            description: description,
-            endDate: endDate || null,
+			// 💡 Cập nhật workloadFactor, đảm bảo nó là số và nằm trong phạm vi an toàn (ví dụ: 0.1 - 2.0)
+			...(typeof workloadFactor !== 'undefined' && {
+				workloadFactor: Math.min(2.0, Math.max(0.1, Number(workloadFactor)))
+			})
+		};
 
-            // Cập nhật workloadFactor
-            ...(typeof workloadFactor !== 'undefined' && {
-                workloadFactor: Math.min(2.0, Math.max(0.1, Number(workloadFactor)))
-            })
-        };
+		const [updated] = await Project.update(updateData, { where: { id: projectId } });
 
-        const [updated] = await Project.update(updateData, { where: { id: projectId } });
-
-        if (updated) {
-            const updatedProject = await Project.findByPk(projectId);
-
-            // ✅ LOG ĐỂ DEBUG
-            console.log(`✅ Project #${projectId} updated. Current progress: ${updatedProject.progress}%`);
-
-            return res.status(200).send({
-                message: "Project updated successfully.",
-                project: updatedProject
-            });
-        } else {
-            return res.status(200).send({ message: "Project retrieved, but no changes were applied." });
-        }
-    } catch (error) {
-        console.error("Error updating project:", error);
-        res.status(500).send({ message: error.message || "Server error while updating project." });
-    }
+		if (updated) {
+			const updatedProject = await Project.findByPk(projectId);
+			return res.status(200).send({
+				message: "Project updated successfully.",
+				project: updatedProject
+			});
+		} else {
+			// Không có gì thay đổi hoặc không tìm thấy
+			return res.status(200).send({ message: "Project retrieved, but no changes were applied." });
+		}
+	} catch (error) {
+		console.error("Error updating project:", error);
+		res.status(500).send({ message: error.message || "Server error while updating project." });
+	}
 };
 
-// ✅ 7. THÊM HÀM EXPORT WORKLOAD REPORT (Nếu bạn cần)
+// HÀM EXPORT WORKLOAD REPORT
 exports.exportWorkloadReport = async (req, res) => {
-    try {
-        const projectId = req.params.id;
+	try {
+		const projectId = req.params.id;
 
-        const project = await Project.findByPk(projectId, {
-            include: [
-                {
-                    model: Task,
-                    include: [
-                        { model: User, as: 'assignee', attributes: ['id', 'name', 'email'] }
-                    ]
-                }
-            ]
-        });
+		const project = await Project.findByPk(projectId, {
+			include: [
+				{
+					model: Task,
+					include: [
+						{ model: User, as: 'assignee', attributes: ['id', 'name', 'email'] }
+					]
+				}
+			]
+		});
 
-        if (!project) {
-            return res.status(404).send({ message: 'Project not found.' });
-        }
+		if (!project) {
+			return res.status(404).send({ message: 'Project not found.' });
+		}
 
-        // Tạo CSV data
-        let csvData = 'Task ID,Task Title,Assignee,Progress,Workload Weight,Status\n';
+		// Tạo CSV data
+		let csvData = 'Task ID,Task Title,Assignee,Progress,Workload Weight,Status\n';
 
-        project.Tasks.forEach(task => {
-            const assigneeName = task.assignee ? task.assignee.name : 'Unassigned';
-            csvData += `${task.id},"${task.title}","${assigneeName}",${task.progress},${task.workloadWeight},${task.statusId}\n`;
-        });
+		project.Tasks.forEach(task => {
+			const assigneeName = task.assignee ? task.assignee.name : 'Unassigned';
+			csvData += `${task.id},"${task.title}","${assigneeName}",${task.progress},${task.workloadWeight},${task.statusId}\n`;
+		});
 
-        // Thêm summary
-        csvData += `\n\nProject Progress,${project.progress}%\n`;
-        csvData += `Workload Factor,${project.workloadFactor}x\n`;
+		// Thêm summary
+		csvData += `\n\nProject Progress,${project.progress}%\n`;
+		csvData += `Workload Factor,${project.workloadFactor}x\n`;
 
-        res.setHeader('Content-Type', 'text/csv');
-        res.setHeader('Content-Disposition', `attachment; filename="workload_report_${projectId}.csv"`);
-        res.status(200).send(csvData);
+		res.setHeader('Content-Type', 'text/csv');
+		res.setHeader('Content-Disposition', `attachment; filename="workload_report_${projectId}.csv"`);
+		res.status(200).send(csvData);
 
-    } catch (error) {
-        console.error('Error exporting workload report:', error);
-        res.status(500).send({ message: error.message || 'Error exporting report.' });
-    }
+	} catch (error) {
+		console.error('Error exporting workload report:', error);
+		res.status(500).send({ message: error.message || 'Error exporting report.' });
+	}
 };
