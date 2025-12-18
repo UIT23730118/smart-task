@@ -1,5 +1,3 @@
-// /src/pages/ProjectDetail.jsx 
-
 import React, { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Button, Segmented, Progress, Tabs, Upload, List, message, Popconfirm, Typography } from "antd";
@@ -19,11 +17,11 @@ import TaskService from "../api/task.service";
 import TaskCard from "../components/Task/TaskCard";
 import TaskModal from "../components/Task/TaskModal";
 import TaskListView from "../components/Project/TaskListView";
-// Đã thay thế FilterBar bằng TaskFilter
+// Replaced FilterBar with TaskFilter
 import TaskFilter from "../components/Task/TaskFilter";
 import { useAuth } from "../context/AuthContext";
 import ProjectSettingsModal from '../components/Project/ProjectSettingsModal';
-import { FaUsersCog, FaRegListAlt, FaCog } from "react-icons/fa"; // Thêm FaCog
+import { FaUsersCog, FaRegListAlt, FaCog } from "react-icons/fa"; // Added FaCog
 import authHeader from "../api/auth.header";
 import api from "../api/axios";
 import autoTable from 'jspdf-autotable';
@@ -35,10 +33,10 @@ const { Step } = Steps;
 const { Dragger } = Upload;
 const { Text } = Typography;
 
-// --- COMPONENT HIỂN THỊ CHUỖI ĐƯỜNG GĂNG ---
+// --- CRITICAL PATH VISUALIZER COMPONENT ---
 const CriticalPathVisualizer = ({ tasks }) => {
-  // 1. Lọc ra các task Critical (Slack = 0 hoặc isCritical = true)
-  // Lưu ý: Đảm bảo backend đã trả về isCritical hoặc tính slack = 0
+  // 1. Filter out Critical tasks (Slack = 0 or isCritical = true)
+  // Note: Ensure the backend returns isCritical or calculates slack = 0
   const criticalTasks = tasks
     .filter(t => t.isCritical || t.slack === 0)
     .sort((a, b) => (a.es || 0) - (b.es || 0));
@@ -60,7 +58,7 @@ const CriticalPathVisualizer = ({ tasks }) => {
               description={
                 <div style={{ fontSize: '11px' }}>
                   <div>Duration: {task.duration}d</div>
-                  {/* Check kỹ nếu có es/ef thì mới hiện */}
+                  {/* Check if es/ef exists before displaying */}
                   {task.es !== undefined && <div>Day {task.es} ➝ {task.ef}</div>}
                 </div>
               }
@@ -70,7 +68,7 @@ const CriticalPathVisualizer = ({ tasks }) => {
         </Steps>
       </div>
       <div style={{ marginTop: 10, fontSize: '12px', color: '#666' }}>
-        * Các công việc này không được phép trễ. Tổng thời gian dự án phụ thuộc vào chuỗi này.
+        * These tasks cannot be delayed. The total project time depends on this sequence.
       </div>
     </Card>
   );
@@ -85,7 +83,7 @@ const ProjectDetail = () => {
   const [error, setError] = useState("");
 
   // Filter & View state
-  // Đã thay thế searchTerm và filterAssignee bằng một object filters
+  // Replaced searchTerm and filterAssignee with a filters object
   const [filters, setFilters] = useState({});
   const [viewMode, setViewMode] = useState("list");
 
@@ -100,7 +98,7 @@ const ProjectDetail = () => {
 
   // --- FILTER HANDLER ---
   const handleFilterChange = (newFilters) => {
-    // Cập nhật state filters khi TaskFilter trả về giá trị
+    // Update filters state when TaskFilter returns values
     setFilters(newFilters);
   };
 
@@ -133,7 +131,7 @@ const ProjectDetail = () => {
     }
   };
 
-  // 💡 HÀM REFRESH DỮ LIỆU SAU KHI SETTINGS THAY ĐỔI
+  // 💡 FUNCTION TO REFRESH DATA AFTER SETTINGS CHANGE
   const handleProjectDataRefresh = () => {
     fetchProjectData();
   };
@@ -144,79 +142,36 @@ const ProjectDetail = () => {
   }, [projectId]);
 
   // --- EXPORT WORKLOAD REPORT ---
-  // const handleExportReport = async () => {
-  //   try {
-  //     message.loading('Preparing report...', 0);
-
-  //     const response = await ProjectService.exportWorkloadReport(projectId);
-
-  //     const url = window.URL.createObjectURL(new Blob([response.data]));
-  //     const link = document.createElement('a');
-  //     link.href = url;
-
-  //     const filenameHeader = response.headers['content-disposition'];
-  //     let filename = `workload_report_${projectId}.csv`;
-  //     if (filenameHeader) {
-  //       const matches = filenameHeader.match(/filename="(.+?)"/);
-  //       if (matches && matches[1]) filename = matches[1];
-  //     }
-
-  //     link.setAttribute('download', filename);
-  //     document.body.appendChild(link);
-  //     link.click();
-  //     link.remove();
-
-  //     message.destroy();
-  //     message.success('Report downloaded successfully!');
-  //   } catch (error) {
-  //     message.destroy();
-
-  //     let errorMessage = 'Failed to export report.';
-  //     if (error.response && error.response.data instanceof Blob) {
-  //       const errorText = await error.response.data.text();
-  //       try {
-  //         const errorJson = JSON.parse(errorText);
-  //         errorMessage = errorJson.message || errorMessage;
-  //       } catch (e) { }
-  //     } else if (error.response?.data?.message) {
-  //       errorMessage = error.response.data.message;
-  //     }
-
-  //     message.error(errorMessage);
-  //   }
-  // };
-
   const handleExportReport = async () => {
     try {
-      message.loading({ content: "Đang lấy dữ liệu...", key: "export" });
+      message.loading({ content: "Fetching data...", key: "export" });
 
-      // 1. GỌI API (Thêm _t để tránh cache)
+      // 1. CALL API (Add _t to prevent caching)
       const res = await api.get(`/projects/${projectId}/stats?_t=${Date.now()}`, {
         headers: authHeader()
       });
 
       const { project, stats, workload } = res.data;
 
-      // Lấy danh sách task để vẽ Gantt (Cần API trả về tasks, nếu API stats chưa có thì phải gọi thêm)
-      // Giả sử res.data.stats chưa đủ thông tin ngày tháng để vẽ Gantt, ta lấy từ projectData state có sẵn
-      // Lưu ý: Biến projectData phải đang có dữ liệu (đã load từ useEffect)
+      // Get task list for Gantt chart (If the stats API doesn't include tasks, call a separate API)
+      // Assumption: projectData state already holds the task data (loaded from useEffect)
       const tasksForGantt = projectData?.tasks || [];
 
       if (!stats || !workload) {
-        message.error("Dữ liệu trống!");
+        message.error("Empty data received!");
         return;
       }
 
-      message.loading({ content: "Đang vẽ biểu đồ...", key: "export" });
+      message.loading({ content: "Generating report...", key: "export" });
 
-      // 2. KHỞI TẠO PDF
+      // 2. INITIALIZE PDF
       const doc = new jsPDF();
       const pageWidth = doc.internal.pageSize.getWidth();
 
       // --- HEADER ---
       const pName = project ? String(project).toUpperCase() : "PROJECT REPORT";
       doc.setFontSize(22);
-      doc.setTextColor(44, 62, 80); // Màu xanh đậm
+      doc.setTextColor(44, 62, 80); // Dark blue color
       doc.text(pName, 14, 20);
 
       doc.setFontSize(10);
@@ -224,22 +179,22 @@ const ProjectDetail = () => {
       doc.text(`Generated by SmartTask • Date: ${new Date().toLocaleString()}`, 14, 26);
 
       // ==============================================
-      // PHẦN A: DASHBOARD KPI (TOTAL TASK & STATUS)
+      // SECTION A: DASHBOARD KPI (TOTAL TASK & STATUS)
       // ==============================================
       let yPos = 35;
 
-      // Cấu hình 4 ô KPI
+      // KPI box configuration
       const kpiWidth = 40;
       const kpiHeight = 25;
       const gap = 6;
       const startX = 14;
 
-      // Helper vẽ ô KPI
+      // Helper to draw KPI box
       const drawKPI = (x, title, value, color) => {
-        doc.setFillColor(...color); // Màu nền
+        doc.setFillColor(...color); // Background color
         doc.roundedRect(x, yPos, kpiWidth, kpiHeight, 3, 3, 'F');
 
-        doc.setTextColor(255, 255, 255); // Chữ trắng
+        doc.setTextColor(255, 255, 255); // White text
         doc.setFontSize(10);
         doc.text(title, x + kpiWidth / 2, yPos + 8, { align: 'center' });
 
@@ -248,15 +203,15 @@ const ProjectDetail = () => {
         doc.text(String(value), x + kpiWidth / 2, yPos + 18, { align: 'center' });
       };
 
-      drawKPI(startX, "TOTAL TASKS", stats.total, [52, 73, 94]);       // Xám xanh
-      drawKPI(startX + kpiWidth + gap, "COMPLETED", stats.done, [46, 204, 113]); // Xanh lá
-      drawKPI(startX + (kpiWidth + gap) * 2, "IN PROGRESS", stats.inProgress, [52, 152, 219]); // Xanh dương
-      drawKPI(startX + (kpiWidth + gap) * 3, "OVERDUE", stats.late, [231, 76, 60]);   // Đỏ
+      drawKPI(startX, "TOTAL TASKS", stats.total, [52, 73, 94]);       // Slate gray
+      drawKPI(startX + kpiWidth + gap, "COMPLETED", stats.done, [46, 204, 113]); // Green
+      drawKPI(startX + (kpiWidth + gap) * 2, "IN PROGRESS", stats.inProgress, [52, 152, 219]); // Blue
+      drawKPI(startX + (kpiWidth + gap) * 3, "OVERDUE", stats.late, [231, 76, 60]);   // Red
 
       // ==============================================
-      // PHẦN B: BIỂU ĐỒ TRÒN (SIMULATED BY STACKED BAR)
+      // SECTION B: PIE CHART (SIMULATED BY STACKED BAR)
       // ==============================================
-      // Thay vì vẽ hình tròn phức tạp, ta vẽ thanh tỉ lệ (Progress Bar) - Dễ nhìn hơn trong PDF
+      // Instead of a complex pie chart, draw a proportion bar (Progress Bar) - Easier to read in PDF
       yPos += 35;
       doc.setFontSize(14);
       doc.setTextColor(0);
@@ -266,32 +221,32 @@ const ProjectDetail = () => {
       yPos += 8;
       const barWidth = 180;
       const barHeight = 10;
-      const total = stats.total || 1; // Tránh chia 0
+      const total = stats.total || 1; // Avoid division by zero
 
-      // Tính độ dài từng đoạn
+      // Calculate segment lengths
       const doneW = (stats.done / total) * barWidth;
       const progW = (stats.inProgress / total) * barWidth;
       const todoW = (stats.todo / total) * barWidth;
-      const lateW = (stats.late / total) * barWidth; // Lưu ý: Late thường nằm trong todo/progress nên cẩn thận cộng dồn
+      // Note: Late tasks are typically part of todo/progress, handle accumulation carefully
 
-      // Vẽ thanh Done (Xanh lá)
+      // Draw Done bar (Green)
       if (stats.done > 0) {
         doc.setFillColor(46, 204, 113);
         doc.rect(14, yPos, doneW, barHeight, 'F');
       }
-      // Vẽ thanh In Progress (Xanh dương)
+      // Draw In Progress bar (Blue)
       if (stats.inProgress > 0) {
         doc.setFillColor(52, 152, 219);
         doc.rect(14 + doneW, yPos, progW, barHeight, 'F');
       }
-      // Vẽ thanh Todo (Xám)
+      // Draw Todo bar (Gray)
       const restW = barWidth - doneW - progW;
       if (restW > 0) {
         doc.setFillColor(189, 195, 199);
         doc.rect(14 + doneW + progW, yPos, restW, barHeight, 'F');
       }
 
-      // Chú thích (Legend)
+      // Legend
       yPos += 16;
       doc.setFontSize(9);
       doc.setTextColor(100);
@@ -301,7 +256,7 @@ const ProjectDetail = () => {
       doc.text(`To Do: ${((stats.todo / total) * 100).toFixed(0)}%`, 110, yPos);
 
       // ==============================================
-      // PHẦN C: GANTT CHART MINI (TIMELINE)
+      // SECTION C: MINI GANTT CHART (TIMELINE)
       // ==============================================
       yPos += 15;
       doc.setFontSize(14);
@@ -311,33 +266,33 @@ const ProjectDetail = () => {
 
       yPos += 10;
 
-      // 1. Tìm ngày Start/End dự án để chia tỉ lệ
-      // Lấy min StartDate và max DueDate của các task
+      // 1. Find Project Start/End dates to set scale
+      // Get min StartDate and max DueDate of all tasks
       const dates = tasksForGantt.flatMap(t => [new Date(t.startDate), new Date(t.dueDate)]);
       const validDates = dates.filter(d => !isNaN(d));
 
-      let minDate = new Date(); // Mặc định hôm nay
+      let minDate = new Date(); // Default to today
       let maxDate = new Date();
-      maxDate.setDate(minDate.getDate() + 30); // Mặc định +30 ngày
+      maxDate.setDate(minDate.getDate() + 30); // Default to +30 days
 
       if (validDates.length > 0) {
         minDate = new Date(Math.min(...validDates));
         maxDate = new Date(Math.max(...validDates));
       }
 
-      // Padding thêm 2 ngày cho thoáng
+      // Add 2 days padding
       maxDate.setDate(maxDate.getDate() + 2);
 
       const totalDuration = (maxDate - minDate);
-      const chartWidth = 170; // Độ rộng biểu đồ
-      const pxPerMs = chartWidth / totalDuration; // Tỉ lệ px trên mili-giây
+      const chartWidth = 170; // Chart width
+      const pxPerMs = chartWidth / totalDuration; // Pixels per millisecond ratio
 
-      // Vẽ khung thời gian
+      // Draw time axis
       doc.setDrawColor(200);
-      doc.line(20, yPos, 20, yPos + (Math.min(tasksForGantt.length, 10) * 8) + 5); // Trục dọc
-      doc.line(20, yPos + (Math.min(tasksForGantt.length, 10) * 8) + 5, 190, yPos + (Math.min(tasksForGantt.length, 10) * 8) + 5); // Trục ngang
+      doc.line(20, yPos, 20, yPos + (Math.min(tasksForGantt.length, 10) * 8) + 5); // Vertical axis
+      doc.line(20, yPos + (Math.min(tasksForGantt.length, 10) * 8) + 5, 190, yPos + (Math.min(tasksForGantt.length, 10) * 8) + 5); // Horizontal axis
 
-      // Vẽ từng Task (Max 10 task để không tràn trang)
+      // Draw each Task (Max 10 tasks to prevent overflow)
       const topTasks = tasksForGantt.slice(0, 10);
 
       topTasks.forEach((task, index) => {
@@ -346,46 +301,46 @@ const ProjectDetail = () => {
         const tStart = task.startDate ? new Date(task.startDate) : new Date();
         const tEnd = task.dueDate ? new Date(task.dueDate) : new Date();
 
-        // Tính vị trí X và chiều dài W
+        // Calculate X position and Width W
         const offsetMs = tStart - minDate;
         const durationMs = tEnd - tStart;
 
         let barX = 20 + (offsetMs * pxPerMs);
         let barW = durationMs * pxPerMs;
 
-        // Giới hạn không vẽ lố
+        // Constraint check
         if (barX < 20) barX = 20;
-        if (barW < 2) barW = 2; // Tối thiểu 2px
+        if (barW < 2) barW = 2; // Minimum 2px
 
-        // Màu sắc dựa trên status
-        if (task.progress === 100) doc.setFillColor(46, 204, 113); // Xanh lá
-        else if (task.progress > 0) doc.setFillColor(52, 152, 219); // Xanh dương
-        else doc.setFillColor(189, 195, 199); // Xám
+        // Color based on status
+        if (task.progress === 100) doc.setFillColor(46, 204, 113); // Green
+        else if (task.progress > 0) doc.setFillColor(52, 152, 219); // Blue
+        else doc.setFillColor(189, 195, 199); // Gray
 
-        // Vẽ thanh Gantt
+        // Draw Gantt bar
         doc.roundedRect(barX, rowY, barW, 5, 1, 1, 'F');
 
-        // Tên task bên trái
+        // Task name on the left
         doc.setFontSize(8);
         doc.setTextColor(80);
-        // Cắt tên task nếu dài quá
+        // Truncate task name if too long
         const taskName = task.title.length > 15 ? task.title.substring(0, 15) + "..." : task.title;
         doc.text(taskName, 18, rowY + 3.5, { align: 'right' });
       });
 
-      // Nếu còn task chưa vẽ hết
+      // If there are more tasks not drawn
       if (tasksForGantt.length > 10) {
         doc.setFontSize(8);
         doc.text(`...and ${tasksForGantt.length - 10} more tasks`, 100, yPos + (10 * 8) + 10, { align: 'center' });
       }
 
       // ==============================================
-      // PHẦN D: BẢNG SỐ LIỆU CHI TIẾT (AUTO TABLE)
+      // SECTION D: DETAILED DATA TABLE (AUTO TABLE)
       // ==============================================
-      // Cập nhật lại Y sau khi vẽ Gantt
+      // Update Y position after drawing Gantt
       let finalY = yPos + (Math.min(tasksForGantt.length, 10) * 8) + 25;
 
-      // Nếu sắp hết trang thì qua trang mới
+      // If close to end of page, move to new page
       if (finalY > 250) {
         doc.addPage();
         finalY = 20;
@@ -409,17 +364,17 @@ const ProjectDetail = () => {
         head: [['Member Name', 'Role', 'Assigned', 'Done', 'Rate']],
         body: memberData,
         theme: 'striped',
-        headStyles: { fillColor: [44, 62, 80] }, // Màu tối sang trọng
+        headStyles: { fillColor: [44, 62, 80] }, // Elegant dark color
         styles: { fontSize: 10, cellPadding: 3 }
       });
 
-      // 3. LƯU FILE
+      // 3. SAVE FILE
       doc.save(`${pName}_Analytical_Report.pdf`);
-      message.success({ content: "Đã xuất báo cáo chi tiết!", key: "export" });
+      message.success({ content: "Detailed report exported successfully!", key: "export" });
 
     } catch (error) {
       console.error("PDF ERROR:", error);
-      message.error({ content: "Lỗi tạo báo cáo", key: "export" });
+      message.error({ content: "Error creating report", key: "export" });
     }
   };
 
@@ -502,7 +457,7 @@ const ProjectDetail = () => {
   if (error) return <div className="alert alert-danger m-4">{error}</div>;
   if (!projectData) return <div className="p-4">Project not found.</div>;
 
-  // 💡 KIỂM TRA QUYỀN LEADER CỦA DỰ ÁN
+  // 💡 CHECK PROJECT LEADER PERMISSION
   const isProjectLeader = user.role === "leader" && user.id === projectData.leaderId;
 
   // Progress calculation
@@ -524,32 +479,32 @@ const ProjectDetail = () => {
     );
   };
 
-  // Áp dụng logic lọc mới từ state filters
+  // Apply new filtering logic from the filters state
   const filteredTasks = projectData.tasks.filter((task) => {
     let matches = true;
 
-    // Lọc theo Key/Summary (key)
+    // Filter by Key/Summary (key)
     if (filters.key) {
       const key = filters.key.toLowerCase();
-      // Giả sử key filter tìm kiếm trong title và description
+      // Assume key filter searches in title and description
       matches = matches && (task.title.toLowerCase().includes(key) || (task.description && task.description.toLowerCase().includes(key)));
     }
 
-    // Lọc theo Priority
-    if (filters.priority && filters.priority !== 'All') { // 💡 Bổ sung check 'All'
+    // Filter by Priority
+    if (filters.priority && filters.priority !== 'All') { // 💡 Added check for 'All'
       matches = matches && (task.priority === filters.priority);
     }
 
-    // Lọc theo Assignee ID
+    // Filter by Assignee ID
     if (filters.assigneeId) {
-      // filters.assigneeId là số (number) hoặc undefined.
-      // Chú ý: task.assigneeId có thể là null, cần kiểm tra an toàn.
+      // filters.assigneeId is a number or undefined.
+      // Note: task.assigneeId can be null, safe check is needed.
       matches = matches && (task.assigneeId === Number(filters.assigneeId));
     }
 
-    // Lọc theo Due Date (filters.dueDate là YYYY-MM-DD)
+    // Filter by Due Date (filters.dueDate is YYYY-MM-DD)
     if (filters.dueDate) {
-      // Lấy phần ngày tháng (YYYY-MM-DD) từ task.dueDate (ISO string)
+      // Get the date part (YYYY-MM-DD) from task.dueDate (ISO string)
       const taskDueDate = task.dueDate ? task.dueDate.split('T')[0] : null;
       matches = matches && (taskDueDate === filters.dueDate);
     }
@@ -568,7 +523,7 @@ const ProjectDetail = () => {
       </div>
 
 
-      {/* 2. Control Bar (View Switcher & Create Button) - Đặt ngay dưới Form Filter */}
+      {/* 2. Control Bar (View Switcher & Create Button) - Place right under the Filter Form */}
       <div
         className="flex justify-end items-center mb-4"
         style={{ display: 'flex', flexDirection: "row-reverse", justifyContent: 'flex-end', alignItems: 'center', gap: 10 }}
@@ -591,7 +546,7 @@ const ProjectDetail = () => {
           Create Task
         </Button>
       </div>
-      {/* Kết thúc thanh hợp nhất */}
+      {/* End of combined bar */}
 
 
       <div style={{ marginTop: 20 }}>
@@ -693,14 +648,14 @@ const ProjectDetail = () => {
           <div style={{ maxWidth: 400, marginTop: 10 }}>
             <div style={{
               display: 'flex',
-              justifyContent: 'space-between', // Đẩy 2 bên
+              justifyContent: 'space-between', // Push to both sides
               alignItems: 'center',
               marginBottom: 4,
-              width: '100%' // ✅ Bắt buộc giãn hết chiều rộng
+              width: '100%' // ✅ Must span full width
             }}>
               <Text strong style={{ fontSize: 13 }}>Project Progress</Text>
 
-              {/* ✅ Thêm paddingLeft để tạo khoảng cách an toàn */}
+              {/* ✅ Add paddingLeft for safe spacing */}
               <Text type="secondary" style={{ fontSize: 13, paddingLeft: '12px', fontWeight: 'bold' }}>
                 {projectData.progress ? projectData.progress.toFixed(2) : '0.00'}%
               </Text>
@@ -708,13 +663,13 @@ const ProjectDetail = () => {
             <Progress
               percent={projectData.progress || 0}
               strokeColor={{ '0%': '#108ee9', '100%': '#87d068' }}
-              strokeWidth={10} // Tăng độ dày một chút cho đẹp
+              strokeWidth={10} // Increase thickness a bit for aesthetics
               showInfo={false}
               status="active"
             />
           </div>
 
-          {/* 💡 BỔ SUNG: HIỂN THỊ WORKLOAD FACTOR */}
+          {/* 💡 ADDITION: DISPLAY WORKLOAD FACTOR */}
           <p style={{ color: "#000", fontWeight: 'bold', marginTop: '5px' }}>
             Workload Factor: <span style={{ color: '#1890ff' }}>{projectData.workloadFactor ? projectData.workloadFactor.toFixed(1) : '1.0'}x</span>
           </p>
@@ -722,12 +677,12 @@ const ProjectDetail = () => {
 
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
 
-          {/* 💡 BỔ SUNG: NÚT PROJECT SETTINGS (CHO LEADER) */}
+          {/* 💡 ADDITION: PROJECT SETTINGS BUTTON (FOR LEADER) */}
           {isProjectLeader && (
             <Button
               icon={<FaCog />}
               type="default"
-              onClick={() => setIsSettingsModalVisible(true)} // Mở modal
+              onClick={() => setIsSettingsModalVisible(true)} // Open modal
             >
               Project Settings
             </Button>
@@ -775,13 +730,13 @@ const ProjectDetail = () => {
         />
       )}
 
-      {/* 💡 BỔ SUNG: RENDER PROJECT SETTINGS MODAL */}
+      {/* 💡 ADDITION: RENDER PROJECT SETTINGS MODAL */}
       {isSettingsModalVisible && (
         <ProjectSettingsModal
           visible={isSettingsModalVisible}
           onCancel={() => setIsSettingsModalVisible(false)}
           project={projectData}
-          onUpdated={handleProjectDataRefresh} // Gọi lại hàm fetchProjectData để lấy workloadFactor mới
+          onUpdated={handleProjectDataRefresh} // Call fetchProjectData again to get the new workloadFactor
         />
       )}
     </div>

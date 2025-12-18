@@ -248,63 +248,119 @@ exports.getMyProjects = async (req, res) => {
 };
 
 // 3. GET PROJECT DETAILS (Including Members from all Teams)
+// exports.getProjectDetails = async (req, res) => {
+// 	try {
+// 		const projectId = req.params.id;
+// 		const calculatedProgress = await updateProjectProgress(projectId);
+// 		const project = await Project.findByPk(projectId, {
+// 			attributes: [
+// 				'id',
+// 				'name',
+// 				'description',
+// 				'leaderId',
+// 				'startDate',
+// 				'endDate',
+// 				'progress',
+// 				'workloadFactor',
+// 				'createdAt',
+// 				'updatedAt'
+// 			],
+// 			include: [
+// 				{ model: User, as: 'leader', attributes: ['id', 'name', 'email'] },
+// 				{
+// 					model: Status,
+// 					required: false,
+// 					where: { [Op.or]: [{ projectId }, { projectId: null }] },
+// 					order: [['position', 'ASC']],
+// 				},
+// 				{
+// 					model: Task,
+// 					required: false,
+// 					include: [
+// 						{ model: User, as: 'assignee', attributes: ['id', 'name'] },
+// 						{ model: IssueType, as: 'type', attributes: ['id', 'name'] },
+// 					],
+// 				},
+// 			],
+// 		});
+
+// 		if (!project) return res.status(404).send({ message: 'Not found' });
+
+// 		const teams = await Team.findAll({
+// 			where: { projectId },
+// 			include: [{
+// 				model: User,
+// 				as: 'members',
+// 				attributes: ['id', 'name', 'email', 'skills'],
+// 				through: { attributes: ['role'] },
+// 			}],
+// 		});
+
+// 		const membersMap = new Map();
+// 		teams.forEach((t) => t.members.forEach((m) => membersMap.set(m.id, m)));
+
+// 		const result = project.toJSON();
+// 		result.members = Array.from(membersMap.values());
+// 		result.progress = calculatedProgress;
+
+// 		res.status(200).send(result);
+// 	} catch (error) {
+// 		res.status(500).send({ message: error.message });
+// 	}
+// };
 exports.getProjectDetails = async (req, res) => {
 	try {
 		const projectId = req.params.id;
-		const calculatedProgress = await updateProjectProgress(projectId);
+
+		// Cập nhật progress (giữ nguyên logic cũ của ông)
+		await updateProjectProgress(projectId);
+
 		const project = await Project.findByPk(projectId, {
-			attributes: [
-				'id',
-				'name',
-				'description',
-				'leaderId',
-				'startDate',
-				'endDate',
-				'progress',
-				'workloadFactor',
-				'createdAt',
-				'updatedAt'
-			],
 			include: [
 				{ model: User, as: 'leader', attributes: ['id', 'name', 'email'] },
-				{
-					model: Status,
-					required: false,
-					where: { [Op.or]: [{ projectId }, { projectId: null }] },
-					order: [['position', 'ASC']],
-				},
+				{ model: Status, required: false, where: { [Op.or]: [{ projectId }, { projectId: null }] } },
 				{
 					model: Task,
 					required: false,
 					include: [
 						{ model: User, as: 'assignee', attributes: ['id', 'name'] },
-						{ model: IssueType, as: 'type', attributes: ['id', 'name'] },
-					],
-				},
-			],
+						{
+							model: Task,
+							as: 'Predecessors',
+							attributes: ['id', 'title', 'dueDate'],
+							through: { attributes: [] } // Bỏ qua bảng trung gian
+						}
+					]
+				}
+			]
 		});
 
 		if (!project) return res.status(404).send({ message: 'Not found' });
 
-		const teams = await Team.findAll({
-			where: { projectId },
-			include: [{
-				model: User,
-				as: 'members',
-				attributes: ['id', 'name', 'email', 'skills'],
-				through: { attributes: ['role'] },
-			}],
-		});
-
+		// Xử lý team members (giữ nguyên logic cũ)
+		const teams = await Team.findAll({ where: { projectId }, include: [{ model: User, as: 'members' }] });
 		const membersMap = new Map();
-		teams.forEach((t) => t.members.forEach((m) => membersMap.set(m.id, m)));
+		teams.forEach(t => t.members.forEach(m => membersMap.set(m.id, m)));
 
-		const result = project.toJSON();
-		result.members = Array.from(membersMap.values());
-		result.progress = calculatedProgress;
+		// --- TÍNH TOÁN CPM ---
+		// Biến project thành JSON thuần
+		const projectData = project.toJSON();
 
-		res.status(200).send(result);
+		// Gọi hàm tính toán
+		console.log("project {}", project);
+		if (projectData.tasks && projectData.tasks.length > 0) {
+			const cpmResult = calculateCPM(project.tasks); // Lưu ý: Sequelize trả về project.Tasks (hoa/thường tùy config)
+			projectData.tasks = cpmResult.tasks;
+			projectData.estimatedDuration = cpmResult.duration;
+			console.log(`🔥 CPM Calculated: Duration ${cpmResult.duration} days`);
+		}
+
+		projectData.members = Array.from(membersMap.values());
+
+		res.status(200).send(projectData);
+
 	} catch (error) {
+		console.error(error);
 		res.status(500).send({ message: error.message });
 	}
 };
