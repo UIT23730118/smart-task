@@ -4,6 +4,9 @@ module.exports = (sequelize, Sequelize) => {
 		isResolved: { type: Sequelize.BOOLEAN, defaultValue: false },
 		taskId: { type: Sequelize.INTEGER },
 		userId: { type: Sequelize.INTEGER },
-	});
+	}, {
+        timestamps: true,
+        updatedAt: false
+    });
 	return OverdueAlert;
 };

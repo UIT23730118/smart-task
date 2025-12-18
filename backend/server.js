@@ -2,6 +2,7 @@
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const { startOverdueCron } = require("./cron/overdue.cron");
 
 const app = express();
 
@@ -15,6 +16,8 @@ const db = require('./models');
 db.sequelize.sync()
     .then(() => {
         console.log("Database connected and synced.");
+        startOverdueCron();
+        require("./cron/deadlineReminder.job");
     })
     .catch((err) => {
         console.error("Failed to sync db: " + err.message);
