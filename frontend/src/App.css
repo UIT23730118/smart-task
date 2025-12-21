@@ -13,6 +13,15 @@
   }
 }
 
+/* Dòng quan trọng sẽ có nền đỏ nhạt */
+.critical-row-highlight {
+  background-color: #fff1f0 !important;
+  border-left: 4px solid #ff4d4f;
+}
+.critical-row-highlight:hover {
+  background-color: #ffccc7 !important;
+}
+
 .App-header {
   background-color: #282c34;
   min-height: 100vh;

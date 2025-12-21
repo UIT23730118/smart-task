@@ -28,9 +28,52 @@ import { useAuth } from "../context/AuthContext";
 import ProjectSettingsModal from '../components/Project/ProjectSettingsModal';
 import { FaUsersCog, FaRegListAlt, FaCog } from "react-icons/fa";
 import api from "../api/axios"; // Thêm FaCog
+import { Steps, Card, Alert } from "antd";
+const { Step } = Steps;
 
 const { Dragger } = Upload;
 const { Text } = Typography;
+
+// --- COMPONENT HIỂN THỊ CHUỖI ĐƯỜNG GĂNG ---
+const CriticalPathVisualizer = ({ tasks }) => {
+  // 1. Lọc ra các task Critical (Slack = 0 hoặc isCritical = true)
+  // Lưu ý: Đảm bảo backend đã trả về isCritical hoặc tính slack = 0
+  const criticalTasks = tasks
+    .filter(t => t.isCritical || t.slack === 0)
+    .sort((a, b) => (a.es || 0) - (b.es || 0));
+
+  if (criticalTasks.length === 0) return null;
+
+  return (
+    <Card
+      title={<span style={{ color: '#cf1322', fontWeight: 'bold' }}>🔥 CRITICAL PATH FLOW (Đường Găng)</span>}
+      size="small"
+      style={{ marginBottom: 20, border: '1px solid #ffa39e', backgroundColor: '#fff2f0' }}
+    >
+      <div style={{ overflowX: 'auto', paddingBottom: 10 }}>
+        <Steps progressDot current={criticalTasks.length} size="small">
+          {criticalTasks.map(task => (
+            <Step
+              key={task.id}
+              title={<span style={{ fontWeight: 'bold' }}>{task.title}</span>}
+              description={
+                <div style={{ fontSize: '11px' }}>
+                  <div>Duration: {task.duration}d</div>
+                  {/* Check kỹ nếu có es/ef thì mới hiện */}
+                  {task.es !== undefined && <div>Day {task.es} ➝ {task.ef}</div>}
+                </div>
+              }
+              status="error"
+            />
+          ))}
+        </Steps>
+      </div>
+      <div style={{ marginTop: 10, fontSize: '12px', color: '#666' }}>
+        * Các công việc này không được phép trễ. Tổng thời gian dự án phụ thuộc vào chuỗi này.
+      </div>
+    </Card>
+  );
+};
 
 const ProjectDetail = () => {
   const { id: projectId } = useParams();
@@ -673,7 +716,10 @@ const handleExportReport = async () => {
           )}
         </div>
       </div>
-
+        {/* Chỉ hiện nếu có dữ liệu tasks */}
+      {projectData && projectData.tasks && (
+          <CriticalPathVisualizer tasks={projectData.tasks} />
+      )}
       <Tabs defaultActiveKey="1" items={items} style={{ marginTop: '10px' }} />
 
       {isTaskModalOpen && (
