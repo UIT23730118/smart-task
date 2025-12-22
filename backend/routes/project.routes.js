@@ -1,8 +1,8 @@
+// /routes/project.routes.js
 const controller = require('../controllers/project.controller');
 const authJwt = require('../middleware/authJwt');
 
 module.exports = function (app) {
-    // Middleware áp dụng cho tất cả routes (CORS headers)
     app.use(function (req, res, next) {
         res.header(
             'Access-Control-Allow-Headers',
@@ -10,10 +10,6 @@ module.exports = function (app) {
         );
         next();
     });
-
-    // =========================================================
-    // CÁC ROUTES CŨ (CRUD & GET PROJECT)
-    // =========================================================
 
     // Tạo project mới (chỉ global leader)
     app.post(
@@ -52,7 +48,6 @@ module.exports = function (app) {
         controller.removeMember
     );
 
-    // Cập nhật Project
     app.put(
         '/api/projects/:id',
         [authJwt.verifyToken, authJwt.isLeader], // Tốt nhất nên dùng authJwt.isProjectLeader
@@ -86,8 +81,8 @@ module.exports = function (app) {
 
     // 3. Export Workload Report (Nếu bạn đã thêm hàm này vào controller)
     // app.get(
-    //     "/api/projects/:id/export/workload", 
-    //     [authJwt.verifyToken], 
+    //     "/api/projects/:id/export/workload",
+    //     [authJwt.verifyToken],
     //     controller.exportWorkloadReport
     // );
 };

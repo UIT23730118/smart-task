@@ -1,4 +1,7 @@
+// /src/pages/ProjectDetail.jsx 
+
 import React, { useState, useEffect } from "react";
+import authHeader from "../api/auth.header";
 import { useParams, Link } from "react-router-dom";
 import { Button, Segmented, Progress, Tabs, Upload, List, message, Popconfirm, Typography } from "antd";
 import {
@@ -13,62 +16,64 @@ import {
 } from "@ant-design/icons";
 import ProjectService from "../api/project.service";
 import TaskService from "../api/task.service";
-
+import GanttChart from "../components/Project/GanttChart";
 import TaskCard from "../components/Task/TaskCard";
 import TaskModal from "../components/Task/TaskModal";
 import TaskListView from "../components/Project/TaskListView";
-// Replaced FilterBar with TaskFilter
+// Đã thay thế FilterBar bằng TaskFilter
 import TaskFilter from "../components/Task/TaskFilter";
 import { useAuth } from "../context/AuthContext";
 import ProjectSettingsModal from '../components/Project/ProjectSettingsModal';
 import { FaUsersCog, FaRegListAlt, FaCog } from "react-icons/fa"; // Added FaCog
-import authHeader from "../api/auth.header";
 import api from "../api/axios";
 import autoTable from 'jspdf-autotable';
 import jsPDF from "jspdf";
-import { Steps, Card, Alert } from "antd";
+import { Steps, Card } from "antd";
 
 const { Step } = Steps;
 
 const { Dragger } = Upload;
 const { Text } = Typography;
 
-// --- CRITICAL PATH VISUALIZER COMPONENT ---
+// --- COMPONENT HIỂN THỊ CHUỖI ĐƯỜNG GĂNG ---
 const CriticalPathVisualizer = ({ tasks }) => {
-  // 1. Filter out Critical tasks (Slack = 0 or isCritical = true)
-  // Note: Ensure the backend returns isCritical or calculates slack = 0
+  // 1. Lọc ra các task Critical
   const criticalTasks = tasks
-    .filter(t => t.isCritical || t.slack === 0)
+    .filter(t => t.isCritical || t.slack <= 0) // Check cả slack <= 0 cho chắc
     .sort((a, b) => (a.es || 0) - (b.es || 0));
 
   if (criticalTasks.length === 0) return null;
 
+  // 2. CHUẨN BỊ DATA CHO ANT DESIGN V5 (Dùng prop `items`)
+  const stepItems = criticalTasks.map(task => ({
+      key: task.id,
+      title: <span style={{ fontWeight: 'bold' }}>{task.title}</span>,
+      description: (
+        <div style={{ fontSize: '11px' }}>
+          <div>Duration: {task.duration}d</div>
+          {task.es !== undefined && <div>Day {task.es} ➝ {task.ef}</div>}
+        </div>
+      ),
+      status: 'error', // Màu đỏ báo động
+  }));
+
   return (
     <Card
-      title={<span style={{ color: '#cf1322', fontWeight: 'bold' }}>🔥 CRITICAL PATH FLOW (Đường Găng)</span>}
+      title={<span style={{ color: '#cf1322', fontWeight: 'bold' }}>🔥 CRITICAL PATH FLOW</span>}
       size="small"
       style={{ marginBottom: 20, border: '1px solid #ffa39e', backgroundColor: '#fff2f0' }}
     >
       <div style={{ overflowX: 'auto', paddingBottom: 10 }}>
-        <Steps progressDot current={criticalTasks.length} size="small">
-          {criticalTasks.map(task => (
-            <Step
-              key={task.id}
-              title={<span style={{ fontWeight: 'bold' }}>{task.title}</span>}
-              description={
-                <div style={{ fontSize: '11px' }}>
-                  <div>Duration: {task.duration}d</div>
-                  {/* Check if es/ef exists before displaying */}
-                  {task.es !== undefined && <div>Day {task.es} ➝ {task.ef}</div>}
-                </div>
-              }
-              status="error"
-            />
-          ))}
-        </Steps>
+        {/* SỬA LẠI CHỖ NÀY: Dùng prop items thay vì children */}
+        <Steps
+            progressDot
+            current={criticalTasks.length}
+            size="small"
+            items={stepItems}
+        />
       </div>
       <div style={{ marginTop: 10, fontSize: '12px', color: '#666' }}>
-        * These tasks cannot be delayed. The total project time depends on this sequence.
+        * These job are not allow to be late.
       </div>
     </Card>
   );
@@ -83,7 +88,7 @@ const ProjectDetail = () => {
   const [error, setError] = useState("");
 
   // Filter & View state
-  // Replaced searchTerm and filterAssignee with a filters object
+  // Đã thay thế searchTerm và filterAssignee bằng một object filters
   const [filters, setFilters] = useState({});
   const [viewMode, setViewMode] = useState("list");
 
@@ -98,7 +103,7 @@ const ProjectDetail = () => {
 
   // --- FILTER HANDLER ---
   const handleFilterChange = (newFilters) => {
-    // Update filters state when TaskFilter returns values
+    // Cập nhật state filters khi TaskFilter trả về giá trị
     setFilters(newFilters);
   };
 
@@ -144,237 +149,268 @@ const ProjectDetail = () => {
   // --- EXPORT WORKLOAD REPORT ---
   const handleExportReport = async () => {
     try {
-      message.loading({ content: "Fetching data...", key: "export" });
+      message.loading({ content: "Đang tải dữ liệu...", key: "export" });
 
-      // 1. CALL API (Add _t to prevent caching)
       const res = await api.get(`/projects/${projectId}/stats?_t=${Date.now()}`, {
         headers: authHeader()
       });
 
-      const { project, stats, workload } = res.data;
-
-      // Get task list for Gantt chart (If the stats API doesn't include tasks, call a separate API)
-      // Assumption: projectData state already holds the task data (loaded from useEffect)
-      const tasksForGantt = projectData?.tasks || [];
+      const { stats, workload } = res.data;
+      const allTasks = projectData?.tasks || [];
+      const projectName = projectData?.name || "Project Report";
 
       if (!stats || !workload) {
-        message.error("Empty data received!");
+        message.error("Không có dữ liệu!");
         return;
       }
 
-      message.loading({ content: "Generating report...", key: "export" });
+      message.loading({ content: "Đang vẽ PDF...", key: "export" });
 
-      // 2. INITIALIZE PDF
       const doc = new jsPDF();
-      const pageWidth = doc.internal.pageSize.getWidth();
 
-      // --- HEADER ---
-      const pName = project ? String(project).toUpperCase() : "PROJECT REPORT";
+      // --- 1. HEADER & INFO ---
       doc.setFontSize(22);
-      doc.setTextColor(44, 62, 80); // Dark blue color
-      doc.text(pName, 14, 20);
+      doc.setTextColor(44, 62, 80);
+      doc.setFont("helvetica", "bold");
+      doc.text(String(projectName).toUpperCase(), 14, 20);
 
       doc.setFontSize(10);
       doc.setTextColor(100);
-      doc.text(`Generated by SmartTask • Date: ${new Date().toLocaleString()}`, 14, 26);
+      doc.setFont("helvetica", "normal");
 
-      // ==============================================
-      // SECTION A: DASHBOARD KPI (TOTAL TASK & STATUS)
-      // ==============================================
-      let yPos = 35;
+      const startDate = projectData.startDate ? new Date(projectData.startDate).toLocaleDateString('en-GB') : 'N/A';
+      const dueDate = projectData.dueDate ? new Date(projectData.dueDate).toLocaleDateString('en-GB') : 'N/A';
+      const factor = projectData.workloadFactor ? projectData.workloadFactor.toFixed(1) : '1.0';
 
-      // KPI box configuration
+      doc.text(`Exported: ${new Date().toLocaleString()}`, 14, 26);
+      doc.setTextColor(0);
+      doc.text(`Timeline: ${startDate} - ${dueDate}`, 14, 32);
+      doc.text(`Workload Factor:`, 120, 32);
+      doc.setTextColor(255, 0, 0);
+      doc.setFont("helvetica", "bold");
+      doc.text(`${factor}x`, 150, 32);
+
+      // --- 2. KPI BOXES ---
+      let yPos = 45;
       const kpiWidth = 40;
       const kpiHeight = 25;
       const gap = 6;
       const startX = 14;
 
-      // Helper to draw KPI box
       const drawKPI = (x, title, value, color) => {
-        doc.setFillColor(...color); // Background color
+        doc.setFillColor(...color);
         doc.roundedRect(x, yPos, kpiWidth, kpiHeight, 3, 3, 'F');
-
-        doc.setTextColor(255, 255, 255); // White text
+        doc.setTextColor(255, 255, 255);
         doc.setFontSize(10);
         doc.text(title, x + kpiWidth / 2, yPos + 8, { align: 'center' });
-
         doc.setFontSize(16);
         doc.setFont("helvetica", "bold");
         doc.text(String(value), x + kpiWidth / 2, yPos + 18, { align: 'center' });
       };
 
-      drawKPI(startX, "TOTAL TASKS", stats.total, [52, 73, 94]);       // Slate gray
-      drawKPI(startX + kpiWidth + gap, "COMPLETED", stats.done, [46, 204, 113]); // Green
-      drawKPI(startX + (kpiWidth + gap) * 2, "IN PROGRESS", stats.inProgress, [52, 152, 219]); // Blue
-      drawKPI(startX + (kpiWidth + gap) * 3, "OVERDUE", stats.late, [231, 76, 60]);   // Red
+      drawKPI(startX, "TOTAL", stats.total, [52, 73, 94]);
+      drawKPI(startX + kpiWidth + gap, "DONE", stats.done, [46, 204, 113]);
+      drawKPI(startX + (kpiWidth + gap) * 2, "IN PROGRESS", stats.inProgress, [52, 152, 219]);
+      drawKPI(startX + (kpiWidth + gap) * 3, "LATE", stats.late, [231, 76, 60]);
 
-      // ==============================================
-      // SECTION B: PIE CHART (SIMULATED BY STACKED BAR)
-      // ==============================================
-      // Instead of a complex pie chart, draw a proportion bar (Progress Bar) - Easier to read in PDF
+      // --- 3. MEMBER TABLE (DEEP SCAN FIX) ---
       yPos += 35;
       doc.setFontSize(14);
       doc.setTextColor(0);
       doc.setFont("helvetica", "bold");
-      doc.text("1. Status Distribution", 14, yPos);
+      doc.text("Member Workload & Tasks", 14, yPos);
 
-      yPos += 8;
-      const barWidth = 180;
-      const barHeight = 10;
-      const total = stats.total || 1; // Avoid division by zero
+      const tableBody = workload.map(u => {
+        // [FIX] Tìm ID người dùng mọi nơi có thể
+        const targetId = String(u.id || u.userId || "");
 
-      // Calculate segment lengths
-      const doneW = (stats.done / total) * barWidth;
-      const progW = (stats.inProgress / total) * barWidth;
-      const todoW = (stats.todo / total) * barWidth;
-      // Note: Late tasks are typically part of todo/progress, handle accumulation carefully
+        const userTasks = allTasks.filter(t => {
+           // Check 1: assigneeId trực tiếp
+           if (t.assigneeId && String(t.assigneeId) === targetId) return true;
+           // Check 2: assignee là object (ví dụ task.assignee.id)
+           if (t.assignee && t.assignee.id && String(t.assignee.id) === targetId) return true;
+           // Check 3: Fallback tìm theo tên (nếu ID bị null)
+           if (t.assignee && t.assignee.name === u.name) return true;
 
-      // Draw Done bar (Green)
-      if (stats.done > 0) {
-        doc.setFillColor(46, 204, 113);
-        doc.rect(14, yPos, doneW, barHeight, 'F');
-      }
-      // Draw In Progress bar (Blue)
-      if (stats.inProgress > 0) {
-        doc.setFillColor(52, 152, 219);
-        doc.rect(14 + doneW, yPos, progW, barHeight, 'F');
-      }
-      // Draw Todo bar (Gray)
-      const restW = barWidth - doneW - progW;
-      if (restW > 0) {
-        doc.setFillColor(189, 195, 199);
-        doc.rect(14 + doneW + progW, yPos, restW, barHeight, 'F');
-      }
+           return false;
+        });
 
-      // Legend
-      yPos += 16;
-      doc.setFontSize(9);
-      doc.setTextColor(100);
-      doc.setFont("helvetica", "normal");
-      doc.text(`Completed: ${((stats.done / total) * 100).toFixed(0)}%`, 14, yPos);
-      doc.text(`In Progress: ${((stats.inProgress / total) * 100).toFixed(0)}%`, 60, yPos);
-      doc.text(`To Do: ${((stats.todo / total) * 100).toFixed(0)}%`, 110, yPos);
+        const taskListString = userTasks.length > 0
+            ? userTasks.map(t => {
+                const statusShort = Number(t.progress) === 100 ? "[✔]" : `[${t.progress || 0}%]`;
+                const cleanTitle = t.title ? t.title.replace(/\n/g, " ") : "Task";
+                return `${statusShort} ${cleanTitle}`;
+              }).join("\n")
+            : "No active tasks";
 
-      // ==============================================
-      // SECTION C: MINI GANTT CHART (TIMELINE)
-      // ==============================================
-      yPos += 15;
-      doc.setFontSize(14);
-      doc.setTextColor(0);
-      doc.setFont("helvetica", "bold");
-      doc.text("2. Project Timeline (Gantt)", 14, yPos);
-
-      yPos += 10;
-
-      // 1. Find Project Start/End dates to set scale
-      // Get min StartDate and max DueDate of all tasks
-      const dates = tasksForGantt.flatMap(t => [new Date(t.startDate), new Date(t.dueDate)]);
-      const validDates = dates.filter(d => !isNaN(d));
-
-      let minDate = new Date(); // Default to today
-      let maxDate = new Date();
-      maxDate.setDate(minDate.getDate() + 30); // Default to +30 days
-
-      if (validDates.length > 0) {
-        minDate = new Date(Math.min(...validDates));
-        maxDate = new Date(Math.max(...validDates));
-      }
-
-      // Add 2 days padding
-      maxDate.setDate(maxDate.getDate() + 2);
-
-      const totalDuration = (maxDate - minDate);
-      const chartWidth = 170; // Chart width
-      const pxPerMs = chartWidth / totalDuration; // Pixels per millisecond ratio
-
-      // Draw time axis
-      doc.setDrawColor(200);
-      doc.line(20, yPos, 20, yPos + (Math.min(tasksForGantt.length, 10) * 8) + 5); // Vertical axis
-      doc.line(20, yPos + (Math.min(tasksForGantt.length, 10) * 8) + 5, 190, yPos + (Math.min(tasksForGantt.length, 10) * 8) + 5); // Horizontal axis
-
-      // Draw each Task (Max 10 tasks to prevent overflow)
-      const topTasks = tasksForGantt.slice(0, 10);
-
-      topTasks.forEach((task, index) => {
-        const rowY = yPos + (index * 8) + 2;
-
-        const tStart = task.startDate ? new Date(task.startDate) : new Date();
-        const tEnd = task.dueDate ? new Date(task.dueDate) : new Date();
-
-        // Calculate X position and Width W
-        const offsetMs = tStart - minDate;
-        const durationMs = tEnd - tStart;
-
-        let barX = 20 + (offsetMs * pxPerMs);
-        let barW = durationMs * pxPerMs;
-
-        // Constraint check
-        if (barX < 20) barX = 20;
-        if (barW < 2) barW = 2; // Minimum 2px
-
-        // Color based on status
-        if (task.progress === 100) doc.setFillColor(46, 204, 113); // Green
-        else if (task.progress > 0) doc.setFillColor(52, 152, 219); // Blue
-        else doc.setFillColor(189, 195, 199); // Gray
-
-        // Draw Gantt bar
-        doc.roundedRect(barX, rowY, barW, 5, 1, 1, 'F');
-
-        // Task name on the left
-        doc.setFontSize(8);
-        doc.setTextColor(80);
-        // Truncate task name if too long
-        const taskName = task.title.length > 15 ? task.title.substring(0, 15) + "..." : task.title;
-        doc.text(taskName, 18, rowY + 3.5, { align: 'right' });
+        return [
+          u.name,
+          u.role === 'subleader' ? 'Sub-Leader' : 'Member',
+          u.totalTasks,
+          taskListString,
+          `${u.totalTasks > 0 ? ((u.completedTasks / u.totalTasks) * 100).toFixed(0) : 0}%`
+        ];
       });
-
-      // If there are more tasks not drawn
-      if (tasksForGantt.length > 10) {
-        doc.setFontSize(8);
-        doc.text(`...and ${tasksForGantt.length - 10} more tasks`, 100, yPos + (10 * 8) + 10, { align: 'center' });
-      }
-
-      // ==============================================
-      // SECTION D: DETAILED DATA TABLE (AUTO TABLE)
-      // ==============================================
-      // Update Y position after drawing Gantt
-      let finalY = yPos + (Math.min(tasksForGantt.length, 10) * 8) + 25;
-
-      // If close to end of page, move to new page
-      if (finalY > 250) {
-        doc.addPage();
-        finalY = 20;
-      }
-
-      doc.setFontSize(14);
-      doc.setTextColor(0);
-      doc.setFont("helvetica", "bold");
-      doc.text("3. Member Workload Details", 14, finalY);
-
-      const memberData = workload.map(u => [
-        u.name,
-        u.role === 'subleader' ? 'Sub-Leader' : 'Member',
-        u.totalTasks,
-        u.completedTasks,
-        `${u.totalTasks > 0 ? ((u.completedTasks / u.totalTasks) * 100).toFixed(0) : 0}%`
-      ]);
 
       autoTable(doc, {
-        startY: finalY + 5,
-        head: [['Member Name', 'Role', 'Assigned', 'Done', 'Rate']],
-        body: memberData,
-        theme: 'striped',
-        headStyles: { fillColor: [44, 62, 80] }, // Elegant dark color
-        styles: { fontSize: 10, cellPadding: 3 }
+        startY: yPos + 5,
+        head: [['Name', 'Role', 'Total', 'Assigned Tasks', 'Rate']],
+        body: tableBody,
+        theme: 'grid',
+        headStyles: { fillColor: [44, 62, 80] },
+        columnStyles: {
+            0: { cellWidth: 25 },
+            1: { cellWidth: 20 },
+            2: { cellWidth: 10, halign: 'center' },
+            3: { cellWidth: 'auto' }, // Cột task tự giãn
+            4: { cellWidth: 15, halign: 'center' }
+        },
+        styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak' },
       });
 
-      // 3. SAVE FILE
-      doc.save(`${pName}_Analytical_Report.pdf`);
-      message.success({ content: "Detailed report exported successfully!", key: "export" });
+      // --- 4. GANTT CHART (WITH GRID & DATE LABELS) ---
+      let finalY = doc.lastAutoTable.finalY + 15;
+      if (finalY > 200) { doc.addPage(); finalY = 20; }
+
+      doc.setFontSize(14);
+      doc.setTextColor(0);
+      doc.setFont("helvetica", "bold");
+      doc.text("Project Timeline Snapshot", 14, finalY);
+
+      finalY += 15; // Tăng khoảng cách header
+
+      // A. Tính toán thời gian
+      let minTime = Infinity;
+      let maxTime = -Infinity;
+      const validTasks = allTasks.filter(t => {
+          const s = new Date(t.startDate).getTime();
+          const e = new Date(t.dueDate).getTime();
+          if (!isNaN(s) && !isNaN(e)) {
+              if (s < minTime) minTime = s;
+              if (e > maxTime) maxTime = e;
+              return true;
+          }
+          return false;
+      });
+
+      let minDate, maxDate;
+      if (validTasks.length === 0) {
+         minDate = new Date();
+         maxDate = new Date(); maxDate.setDate(maxDate.getDate() + 30);
+      } else {
+         minDate = new Date(minTime);
+         maxDate = new Date(maxTime);
+      }
+      // Nới rộng trục thời gian: Trừ 2 ngày đầu, Cộng 10 ngày cuối (để có chỗ ghi text)
+      minDate.setDate(minDate.getDate() - 2);
+      maxDate.setDate(maxDate.getDate() + 10);
+
+      const totalDuration = maxDate.getTime() - minDate.getTime();
+      const chartWidth = 170;
+      const chartStartX = 20;
+      const pxPerMs = totalDuration > 0 ? (chartWidth / totalDuration) : 0;
+      const chartHeight = Math.min(validTasks.length, 15) * 12 + 20; // Tăng chiều cao mỗi dòng
+
+      // B. VẼ TRỤC NGÀY & LƯỚI DỌC (GRIDLINES) - Quan trọng để dễ nhìn
+      const numTicks = 6;
+      doc.setFontSize(8);
+      doc.setTextColor(150);
+      doc.setDrawColor(220); // Màu xám nhạt cho lưới
+
+      // Vẽ khung bao
+      const xAxisY = finalY + chartHeight;
+      doc.line(chartStartX, finalY, chartStartX, xAxisY); // Trục Y
+
+      for (let i = 0; i <= numTicks; i++) {
+        const percent = i / numTicks;
+        const tickX = chartStartX + (chartWidth * percent);
+
+        // Vẽ lưới dọc đứt đoạn (Gridline)
+        doc.setLineDash([1, 1], 0); // Nét đứt
+        doc.line(tickX, finalY, tickX, xAxisY);
+        doc.setLineDash([]); // Reset về nét liền
+
+        // Ghi ngày dưới chân
+        const tickDateMs = minDate.getTime() + (totalDuration * percent);
+        const d = new Date(tickDateMs);
+        const dateStr = `${d.getDate()}/${d.getMonth() + 1}`;
+        doc.text(dateStr, tickX, xAxisY + 5, { align: 'center' });
+      }
+      doc.line(chartStartX, xAxisY, chartStartX + chartWidth, xAxisY); // Trục X đáy
+
+      // C. VẼ TASK BARS + TEXT NGÀY THÁNG
+      const tasksToDraw = validTasks.slice(0, 15);
+
+      tasksToDraw.forEach((task, index) => {
+        const rowY = finalY + (index * 12) + 5;
+
+        const tStart = new Date(task.startDate);
+        let tEnd = new Date(task.dueDate);
+
+        // [FIX TASK 5] Nếu ngày Start >= End (Task 1 ngày hoặc lỗi), tự cộng thêm 1 ngày để có độ rộng
+        if (tStart.getTime() >= tEnd.getTime()) {
+            tEnd = new Date(tStart);
+            tEnd.setDate(tEnd.getDate() + 1); // Cộng 1 ngày
+        }
+
+        // Tính toán vị trí Bar
+        const barX = chartStartX + ((tStart.getTime() - minDate.getTime()) * pxPerMs);
+        let barW = (tEnd.getTime() - tStart.getTime()) * pxPerMs;
+
+        // Clip bar nếu tràn khung trái
+        let finalX = Math.max(chartStartX, barX);
+        let finalW = barW - (finalX - barX); // Trừ đi phần bị cắt bên trái
+
+        // Clip bar nếu tràn khung phải
+        if (finalX + finalW > chartStartX + chartWidth) {
+            finalW = (chartStartX + chartWidth) - finalX;
+        }
+
+        // [QUAN TRỌNG] Ép độ rộng tối thiểu 2px để luôn nhìn thấy (kể cả khi tỉ lệ quá nhỏ)
+        if (finalW < 2 && finalX < chartStartX + chartWidth) finalW = 2;
+
+        // Chỉ vẽ nếu bar còn nằm trong khung
+        if (finalW > 0 && finalX >= chartStartX) {
+
+            // Logic màu sắc
+            const slacks = allTasks.filter(t => t.slack !== undefined).map(t => t.slack);
+            const minSlack = slacks.length > 0 ? Math.min(...slacks) : 0;
+            const currentSlack = (task.slack !== undefined) ? task.slack : 0;
+            const isCritical = task.isCritical === true || currentSlack <= 0 || currentSlack === minSlack;
+
+            // Priority Color: Critical > Completed > Normal
+            if (isCritical) doc.setFillColor(255, 77, 79); // Đỏ
+            else if (Number(task.progress) === 100) doc.setFillColor(82, 196, 26); // Xanh lá
+            else doc.setFillColor(24, 144, 255); // Xanh dương
+
+            // Vẽ Bar (Bo góc 1px)
+            doc.roundedRect(finalX, rowY, finalW, 7, 1, 1, 'F');
+
+            // Ghi ngày tháng bên cạnh
+            doc.setTextColor(80);
+            doc.setFontSize(7);
+
+            // Format ngày hiển thị gốc (không cộng 1) để user không hiểu nhầm
+            const originEnd = new Date(task.dueDate);
+            const dateRangeText = `${tStart.getDate()}/${tStart.getMonth()+1} - ${originEnd.getDate()}/${originEnd.getMonth()+1}`;
+
+            // Vẽ text chệch ra sau thanh bar 2px
+            doc.text(dateRangeText, finalX + finalW + 2, rowY + 5);
+        }
+
+        // Tên task bên trái trục Y
+        doc.setTextColor(0);
+        doc.setFontSize(8);
+        const tName = task.title.length > 18 ? task.title.substring(0, 18) + ".." : task.title;
+        doc.text(String(tName), chartStartX - 2, rowY + 5, { align: 'right' });
+      });
+
+      doc.save(`${String(projectName).replace(/\s+/g, '_')}_Report.pdf`);
+      message.success({ content: "Xuất báo cáo thành công!", key: "export" });
 
     } catch (error) {
       console.error("PDF ERROR:", error);
-      message.error({ content: "Error creating report", key: "export" });
+      message.error({ content: "Lỗi xuất báo cáo", key: "export" });
     }
   };
 
@@ -534,6 +570,7 @@ const ProjectDetail = () => {
           options={[
             { label: "List", value: "list", icon: <UnorderedListOutlined /> },
             { label: "Board", value: "board", icon: <AppstoreOutlined /> },
+            { label: "Gantt", value: "gantt", icon: <BarChartOutlined /> },
           ]}
           className="view-switcher"
         />
@@ -550,9 +587,14 @@ const ProjectDetail = () => {
 
 
       <div style={{ marginTop: 20 }}>
-        {viewMode === "list" ? (
+
+        {/* 1. VIEW LIST */}
+        {viewMode === "list" && (
           <TaskListView tasks={filteredTasks} onTaskClick={openEditTaskModal} />
-        ) : (
+        )}
+
+        {/* 2. VIEW BOARD (KANBAN) - Code cũ của bạn nằm ở đây */}
+        {viewMode === "board" && (
           <div className="kanban-board-container">
             {projectData.statuses.map((status) => {
               const columnTasks = filteredTasks.filter((t) => t.statusId === status.id);
@@ -582,6 +624,14 @@ const ProjectDetail = () => {
               );
             })}
           </div>
+        )}
+
+        {/* 3. VIEW GANTT CHART - Mới thêm vào */}
+        {viewMode === "gantt" && (
+           <div style={{ padding: '20px', background: '#fff', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
+              {/* Truyền filteredTasks vào để Gantt cũng ăn theo bộ lọc tìm kiếm/priority */}
+              <GanttChart tasks={filteredTasks} />
+           </div>
         )}
       </div>
     </>
@@ -724,6 +774,7 @@ const ProjectDetail = () => {
           projectId={projectData.id}
           members={projectData.members}
           statuses={projectData.statuses}
+          tasks={projectData?.tasks || []}
           onClose={closeTaskModal}
           onTaskChanged={handleTaskSaved}
           onTaskRefreshed={handleTaskDataRefresh}
