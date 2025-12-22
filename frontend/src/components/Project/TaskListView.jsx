@@ -62,7 +62,7 @@ const TaskListView = ({ tasks, onTaskClick, statuses }) => {
     }
 
     // Trạng thái khác (warning: Vàng)
-    return "warning";
+    return "default";
   };
 
   // Helper màu cho Slack (Độ trễ)
@@ -177,26 +177,6 @@ const TaskListView = ({ tasks, onTaskClick, statuses }) => {
       render: (priority) => <Tag color={getPriorityColor(priority)}>{priority}</Tag>,
     },
     {
-      title: 'Status',
-      // dataIndex này lấy task.status.name
-      dataIndex: 'statusId',
-      key: 'statusId',
-      width: 120,
-      render: (statusId) => {
-        // Tìm trạng thái trong danh sách statuses được truyền vào
-        const statusObject = statuses?.find(s => s.id === statusId);
-        
-        // Lấy tên trạng thái (hoặc mặc định là Unknown nếu không tìm thấy)
-        const statusName = statusObject ? statusObject.name : "Unknown";
-        
-        return (
-          <Tag color={getStatusTagColor(statusName || "")}>
-            {(statusName).toUpperCase()}
-          </Tag>
-        );
-      }
-    },
-    {
       title: 'Required Skills',
       dataIndex: 'requiredSkills',
       key: 'requiredSkills',
@@ -217,17 +197,6 @@ const TaskListView = ({ tasks, onTaskClick, statuses }) => {
           </div>
         );
       },
-    },
-    {
-      title: 'Priority',
-      dataIndex: 'priority',
-      key: 'priority',
-      width: 100,
-      render: (priority) => (
-        <Tag color={getPriorityColor(priority)}>
-          {priority}
-        </Tag>
-      ),
     },
     {
       title: 'Assignee',
