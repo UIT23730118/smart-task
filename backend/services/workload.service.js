@@ -1,5 +1,4 @@
-// /services/workload.service.js (CLEANED and UPDATED for all KPIs)
-
+// /services/workload.service.js
 const db = require('../models');
 const { Op } = require('sequelize');
 
@@ -9,105 +8,144 @@ const Project = db.projects;
 const Status = db.statuses;
 
 exports.getGlobalWorkloadSummary = async () => {
-    
+
     // 1. Xác định Status ID của các trạng thái HOÀN THÀNH
     const doneStatuses = await Status.findAll({
         where: { name: { [Op.in]: ['Done', 'Completed', 'Closed'] } },
-        attributes: ['id']
+        attributes: ['id', 'name']
     });
     const doneStatusIds = doneStatuses.map(s => s.id);
-    
-    // 2. Lấy TẤT CẢ Tasks (Pending và Done) đã được giao với Project Factor và User Score
+
+    // 2. Lấy TẤT CẢ Tasks đã được giao (pending + done)
     const allAssignedTasks = await Task.findAll({
         where: { assigneeId: { [Op.ne]: null } },
-        attributes: ['id', 'projectId', 'workloadWeight', 'assigneeId', 'statusId'],
+        attributes: [
+            'id',
+            'title',
+            'projectId',
+            'workloadWeight',
+            'assigneeId',
+            'statusId',
+            'progress',
+            'dueDate'
+        ],
         include: [
             {
                 model: User,
-                as: 'assignee', 
-                attributes: ['name', 'score'], // Lấy score của User
-                required: true 
+                as: 'assignee',
+                attributes: ['id', 'name', 'score'],
+                required: true
             },
             {
                 model: Project,
                 as: 'project',
-                attributes: ['workloadFactor'], // Lấy workloadFactor của Project
+                attributes: ['id', 'name', 'workloadFactor'],
                 required: true
+            },
+            {
+                model: Status,
+                attributes: ['id', 'name', 'color']
             }
         ]
     });
 
-    // 3. Khởi tạo Summary Map với tất cả Users
-    const allUsers = await User.findAll({ attributes: ['id', 'name', 'score', 'availability'] });
-    
+    // 3. Khởi tạo Summary Map cho TẤT CẢ Users
+    const allUsers = await User.findAll({
+        attributes: ['id', 'name', 'score', 'availability']
+    });
+
     let summaryMap = allUsers.reduce((acc, user) => {
         acc[user.id] = {
             key: user.id,
             name: user.name,
-            // Sử dụng user.score làm điểm năng suất. Dùng 1.0 nếu null/0.
-            // Dùng user.availability trong tính toán nếu đó là ý định của bạn.
-            userScore: user.score || 1.0, 
-            userAvailability: user.availability || 1.0, 
+            userScore: user.score || 1.0,
+            userAvailability: user.availability || 1.0,
+
+            // KPI
             globalWorkload: 0,
             globalTasksCount: 0,
-            totalTasksDone: 0, // 💡 KPI MỚI
-            totalProjectsInvolved: new Set() // 💡 KPI MỚI
+            totalTasksDone: 0,
+            totalProjectsInvolved: new Set(),
+
+            // 🔥 CHI TIẾT TASK / PROJECT
+            currentTasks: [],
+            completedTasks: []
         };
         return acc;
     }, {});
-    
-    // 4. Lặp qua TẤT CẢ tasks để tổng hợp Workload và KPI
-    allAssignedTasks.forEach(task => {
-        const assigneeId = task.assigneeId;
-        const summary = summaryMap[assigneeId];
-        
-        if (!summary) return; // Bỏ qua nếu user không được lấy (dù đã required: true)
 
-        const isPending = !doneStatusIds.includes(task.statusId);
+    // 4. Tổng hợp dữ liệu
+    allAssignedTasks.forEach(task => {
+        const summary = summaryMap[task.assigneeId];
+        if (!summary) return;
+
+        const isDone = doneStatusIds.includes(task.statusId);
         const projectFactor = task.project?.workloadFactor || 1.0;
         const workloadWeight = task.workloadWeight || 0;
-        
-        // 💡 Tính tổng số Project (cả pending và done)
+
         summary.totalProjectsInvolved.add(task.projectId);
-        
-        if (isPending) {
-            // Tính toán Workload Pending (sử dụng logic ban đầu)
+
+        const taskDetail = {
+            taskId: task.id,
+            title: task.title,
+            progress: task.progress,
+            dueDate: task.dueDate,
+            workloadWeight: task.workloadWeight,
+            project: {
+                projectId: task.project.id,
+                name: task.project.name,
+                workloadFactor: task.project.workloadFactor
+            },
+            status: task.status
+                ? {
+                    statusId: task.status.id,
+                    name: task.status.name,
+                    color: task.status.color
+                }
+                : null
+        };
+
+        if (!isDone) {
+            // Pending task
             const rawWorkload = workloadWeight * projectFactor;
-            
-            // 🚨 FIX LỖI: Sử dụng userScore (score) hay userAvailability? Dùng trường 'score' cho năng suất
-            summary.globalWorkload += rawWorkload; // Tính Workload thô trước
+            summary.globalWorkload += rawWorkload;
             summary.globalTasksCount += 1;
+            summary.currentTasks.push(taskDetail);
         } else {
-            // 💡 Tính tổng số Task Đã Hoàn Thành
+            // Completed task
             summary.totalTasksDone += 1;
+            summary.completedTasks.push(taskDetail);
         }
     });
 
     const THRESHOLD = 20;
 
-    // 5. Chuẩn bị kết quả cuối cùng và tính toán KPI Cân bằng Tải
-    const finalSummaryData = Object.values(summaryMap).map(s => {
-        // Áp dụng User Score (năng suất) cho Workload thô để có Workload đã điều chỉnh
-        const finalGlobalWorkload = (s.globalWorkload / s.userScore); 
-        
+    // 5. Chuẩn hóa kết quả cuối
+    return Object.values(summaryMap).map(s => {
+        const finalGlobalWorkload = s.globalWorkload / s.userScore;
         const workloadBalanceIndex = finalGlobalWorkload / THRESHOLD;
-        let workloadAssessment = 'Optimal'; 
+
+        let workloadAssessment = 'Optimal';
         if (workloadBalanceIndex > 1.5) workloadAssessment = 'Highly Overloaded';
         else if (workloadBalanceIndex > 1.0) workloadAssessment = 'Overloaded';
         else if (workloadBalanceIndex < 0.5) workloadAssessment = 'Underutilized';
 
         return {
-            key: s.id,
+            key: s.key,
             name: s.name,
-            userScore: parseFloat(s.userScore.toFixed(2)),
+
+            // KPI
+            userScore: Number(s.userScore.toFixed(2)),
             globalTasksCount: s.globalTasksCount,
-            totalTasksDone: s.totalTasksDone, // 💡 BỔ SUNG
-            totalProjectsInvolved: s.totalProjectsInvolved.size, // 💡 BỔ SUNG
-            globalWorkload: parseFloat(finalGlobalWorkload.toFixed(2)),
-            workloadAssessment: workloadAssessment,
-            workloadBalanceIndex: parseFloat(workloadBalanceIndex.toFixed(2)),
+            totalTasksDone: s.totalTasksDone,
+            totalProjectsInvolved: s.totalProjectsInvolved.size,
+            globalWorkload: Number(finalGlobalWorkload.toFixed(2)),
+            workloadBalanceIndex: Number(workloadBalanceIndex.toFixed(2)),
+            workloadAssessment,
+
+            // 🔥 TASK / PROJECT DETAIL
+            currentTasks: s.currentTasks,
+            completedTasks: s.completedTasks
         };
     });
-
-    return finalSummaryData;
 };
