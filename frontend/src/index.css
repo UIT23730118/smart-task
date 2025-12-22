@@ -15,6 +15,15 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+:root {
+  --cpm-es-color: #007291; /* Teal đậm cho nền sáng */
+  --cpm-ls-color: #b93a00; /* Cam đất cho nền sáng */
+}
+[data-theme='dark'] {
+  --cpm-es-color: #4fd1c5; /* Cyan sáng cho nền tối */
+  --cpm-ls-color: #ffb000; /* Vàng hổ phách cho nền tối */
+}
+
 /* 3. Đảm bảo các component của Ant Design cũng nhận font này */
 .ant-typography,
 .ant-btn,
