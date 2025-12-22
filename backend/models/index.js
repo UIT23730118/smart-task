@@ -89,6 +89,9 @@ db.attachments.belongsTo(db.users, { foreignKey: 'userId' });
 // 6. Alerts & Performance (Mới)
 db.tasks.hasMany(db.overdueAlerts, { foreignKey: 'taskId', onDelete: 'CASCADE' });
 db.overdueAlerts.belongsTo(db.tasks, { foreignKey: 'taskId' });
+db.overdueAlerts.belongsTo(db.users, {
+  foreignKey: "userId"
+});
 
 db.users.hasMany(db.userPerformance, { foreignKey: 'userId' });
 db.userPerformance.belongsTo(db.users, { foreignKey: 'userId' });
@@ -141,5 +144,6 @@ db.tasks.belongsToMany(db.tasks, {
   foreignKey: "predecessorId",
   otherKey: "successorId"
 });
+
 
 module.exports = db;

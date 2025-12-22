@@ -87,29 +87,57 @@ const updateProjectProgress = async (projectId) => {
 
 // --- HÀM TÍNH CPM (ĐỂ NGUYÊN BÊN NGOÀI hoac TRÊN CÙNG) ---
 const calculateCPM = (tasks) => {
+
+    const normalizeDate = (dateStr) => {
+        if (!dateStr) return null;
+        const d = new Date(dateStr);
+        d.setHours(12, 0, 0, 0);
+        return d.getTime();
+    };
+
     const taskMap = {};
 
-    // 1. Map dữ liệu
-    tasks.forEach(t => {
-        const start = new Date(t.startDate);
-        const end = new Date(t.dueDate);
-        // Tính Duration (làm tròn lên ít nhất 1 ngày)
-        let duration = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
-        if (duration < 1) duration = 1;
+    // 1. TÌM MỐC 0 (Để tính Duration và Deadline)
+    const validStartDates = tasks
+        .map(t => normalizeDate(t.startDate))
+        .filter(t => t && t > 946684800000);
 
-        taskMap[t.id] = {
-            ...t.toJSON(), // Convert Sequelize obj sang JSON thường
+    const projectMinDate = validStartDates.length > 0 ? Math.min(...validStartDates) : normalizeDate(new Date());
+
+    // 2. MAP DỮ LIỆU
+    tasks.forEach(t => {
+        const taskData = t.toJSON ? t.toJSON() : t;
+
+        const start = normalizeDate(taskData.startDate);
+        const end = normalizeDate(taskData.dueDate);
+
+        // Tính Duration
+        let duration = 1;
+        if (start && end) {
+            const diffTime = end - start;
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            duration = diffDays > 0 ? diffDays : 1;
+        }
+
+        taskMap[taskData.id] = {
+            ...taskData,
             duration: duration,
-            es: 0, ef: 0, ls: 0, lf: 0, slack: 0, isCritical: false,
-            // Lấy list ID của task cha từ dữ liệu DB
-            predecessors: t.Predecessors ? t.Predecessors.map(p => p.id) : [],
+            // 👇👇👇 THAY ĐỔI Ở ĐÂY: LUÔN KHỞI TẠO LÀ 0 👇👇👇
+            // Không quan tâm StartDate nhập tay nữa.
+            // Nếu không có ai nối đuôi, nó sẽ đứng yên ở 0.
+            es: 0,
+            ef: 0, ls: 0, lf: 0, slack: 0, isCritical: false,
+            predecessors: taskData.Predecessors ? taskData.Predecessors.map(p => p.id) : [],
             successors: []
         };
+
+        // EF tạm tính theo ES=0
+        taskMap[taskData.id].ef = taskMap[taskData.id].es + duration;
     });
 
     const ids = Object.keys(taskMap);
 
-    // 2. Xây dựng list Successors (Con) từ Predecessors (Cha)
+    // 3. XÂY DỰNG MỐI QUAN HỆ
     ids.forEach(id => {
         const task = taskMap[id];
         task.predecessors.forEach(pId => {
@@ -117,67 +145,86 @@ const calculateCPM = (tasks) => {
         });
     });
 
-    // 3. FORWARD PASS (Tính ES, EF)
+    // 4. FORWARD PASS (CHỈ ĐẨY ES LÊN KHI CÓ PHỤ THUỘC)
     let changed = true;
+    let loopCount = 0;
     while(changed) {
         changed = false;
+        if (loopCount++ > 100) break;
+
         ids.forEach(id => {
             const task = taskMap[id];
-            let maxPrevEF = 0;
+            let maxPrevEF = 0; // Mặc định là 0 nếu không có cha
+
+            // Chỉ quan tâm Task Cha kết thúc khi nào
             task.predecessors.forEach(pId => {
-                if (taskMap[pId] && taskMap[pId].ef > maxPrevEF) maxPrevEF = taskMap[pId].ef;
+                if (taskMap[pId] && taskMap[pId].ef > maxPrevEF) {
+                    maxPrevEF = taskMap[pId].ef;
+                }
             });
 
-            // Nếu ngày bắt đầu dự kiến ES thay đổi -> Cập nhật lại
+            // Cập nhật ES
             if (task.es < maxPrevEF) {
                 task.es = maxPrevEF;
                 task.ef = task.es + task.duration;
                 changed = true;
-            } else if (task.ef === 0) { // Trường hợp khởi tạo
-                 task.ef = task.es + task.duration;
             }
         });
     }
 
-    // 4. BACKWARD PASS (Tính LS, LF)
-    const projectDuration = Math.max(...ids.map(id => taskMap[id].ef));
+    // 5. BACKWARD PASS (TÍNH DEADLINE)
+    const projectDuration = Math.max(...ids.map(id => taskMap[id].ef), 0);
 
-    // Khởi tạo LF = Project End
-    ids.forEach(id => taskMap[id].lf = projectDuration);
+    ids.forEach(id => {
+        const task = taskMap[id];
+        let deadlineIndex = projectDuration;
+
+        task.lf = deadlineIndex;
+        // Khởi tạo LS ngay để tránh lỗi LF=0
+        task.ls = task.lf - task.duration;
+    });
 
     changed = true;
+    loopCount = 0;
     while(changed) {
         changed = false;
+        if (loopCount++ > 100) break;
+
         ids.forEach(id => {
             const task = taskMap[id];
-            let minNextLS = projectDuration;
+            let minNextLS = Number.MAX_SAFE_INTEGER;
 
             if (task.successors.length > 0) {
                 const nextLSValues = task.successors.map(sId => taskMap[sId] ? taskMap[sId].ls : projectDuration);
                 minNextLS = Math.min(...nextLSValues);
+
+                if (minNextLS < task.lf) {
+                    task.lf = minNextLS;
+                    const newLS = task.lf - task.duration;
+                    if(task.ls !== newLS){
+                        task.ls = newLS;
+                        changed = true;
+                    }
+                }
             }
 
-            if (task.lf > minNextLS) {
-                task.lf = minNextLS;
-                const newLS = task.lf - task.duration;
-                if (task.ls !== newLS) {
-                    task.ls = newLS;
-                    changed = true;
-                }
-            } else if (task.ls === 0 && task.lf === projectDuration) { // Init logic
-                 task.ls = task.lf - task.duration;
+            const currentLS = task.lf - task.duration;
+            if (task.ls !== currentLS) {
+                task.ls = currentLS;
             }
         });
     }
 
-    // 5. TÍNH SLACK & CRITICAL PATH
+    // 6. TÍNH SLACK
     ids.forEach(id => {
         const task = taskMap[id];
         task.ls = task.lf - task.duration;
-        task.slack = task.ls - task.es;
-        if (task.slack <= 0) { // Cho phép sai số nhỏ = 0
-            task.slack = 0;
+        task.slack = task.lf - task.ef;
+
+        if (task.slack <= 0) {
             task.isCritical = true;
+        } else {
+            task.isCritical = false;
         }
     });
 
@@ -227,12 +274,33 @@ exports.getProjectDetails = async (req, res) => {
         const projectData = project.toJSON();
 
         // Gọi hàm tính toán
-        if (projectData.tasks && projectData.tasks.length > 0) {
-            const cpmResult = calculateCPM(project.Tasks); // Lưu ý: Sequelize trả về project.Tasks (hoa/thường tùy config)
+        let tasksToCalculate = projectData.tasks || projectData.Tasks || [];
+
+        if (tasksToCalculate.length > 0) {
+            console.log(`✅ [DEBUG] Found ${tasksToCalculate.length} tasks. Running CPM...`);
+
+            const cpmResult = calculateCPM(tasksToCalculate);
+
             projectData.tasks = cpmResult.tasks;
             projectData.estimatedDuration = cpmResult.duration;
-            console.log(`🔥 CPM Calculated: Duration ${cpmResult.duration} days`);
+
+            console.log(`🔥 [CPM DONE] Project Duration: ${cpmResult.duration} days`);
+        } else {
+            console.log("⚠️ [DEBUG] No tasks found to calculate.");
+            projectData.tasks = [];
         }
+
+        projectData.tasks = projectData.tasks.map(t => ({
+            ...t,
+            es: t.es ?? 0,
+            ef: t.ef ?? 0,
+            ls: t.ls ?? 0,
+            lf: t.lf ?? 0,
+            slack: t.slack ?? 0,
+            isCritical: t.isCritical ?? false
+        }));
+
+        delete projectData.Tasks;
 
         projectData.members = Array.from(membersMap.values());
 
@@ -315,73 +383,7 @@ exports.getMyProjects = async (req, res) => {
 	}
 };
 
-// 3. LẤY CHI TIẾT PROJECT (Bao gồm cả Members từ tất cả Teams)
-exports.getProjectDetails = async (req, res) => {
-	try {
-		const projectId = req.params.id;
-		const calculatedProgress = await updateProjectProgress(projectId);
-		const project = await Project.findByPk(projectId, {
-			attributes: [
-				'id',
-				'name',
-				'description',
-				'leaderId',
-				'startDate',
-				'endDate',
-				'progress',
-				'workloadFactor',
-				'createdAt',
-				'updatedAt'
-			],
-			include: [
-				{ model: User, as: 'leader', attributes: ['id', 'name', 'email'] },
-				{
-					model: Status,
-					required: false,
-					where: { [Op.or]: [{ projectId }, { projectId: null }] },
-					order: [['position', 'ASC']],
-				},
-				{
-					model: Task,
-					required: false,
-					include: [
-						{ model: User, as: 'assignee', attributes: ['id', 'name'] },
-						{ model: IssueType, as: 'type', attributes: ['id', 'name'] },
-					],
-				},
-			],
-		});
-
-		if (!project) return res.status(404).send({ message: 'Not found' });
-
-		// Lấy members từ bảng Teams
-		const teams = await Team.findAll({
-			where: { projectId },
-			include: [
-				{
-					model: User,
-					as: 'members',
-					attributes: ['id', 'name', 'email', 'skills'],
-					through: { attributes: ['role'] },
-				},
-			],
-		});
-
-		// Flatten members
-		const membersMap = new Map();
-		teams.forEach((t) => t.members.forEach((m) => membersMap.set(m.id, m)));
-
-		const result = project.toJSON();
-		result.members = Array.from(membersMap.values());
-		result.progress = calculatedProgress;
-
-		res.status(200).send(result);
-	} catch (error) {
-		res.status(500).send({ message: error.message });
-	}
-};
-
-// 4. THÊM THÀNH VIÊN (Vào Team mặc định của Project)
+// 4. ADD MEMBER
 exports.addMember = async (req, res) => {
 	try {
 		const projectId = req.params.id;
@@ -476,12 +478,11 @@ exports.updateProject = async (req, res) => {
 				project: updatedProject
 			});
 		} else {
-			// Không có gì thay đổi hoặc không tìm thấy
-			return res.status(200).send({ message: "Project retrieved, but no changes were applied." });
+			return res.status(200).send({ message: "No changes applied." });
 		}
 	} catch (error) {
 		console.error("Error updating project:", error);
-		res.status(500).send({ message: error.message || "Server error while updating project." });
+		res.status(500).send({ message: "Server error while updating project." });
 	}
 };
 
@@ -495,14 +496,14 @@ exports.exportWorkloadReport = async (req, res) => {
 				{
 					model: Task,
 					include: [
-						{model: User, as: 'assignee', attributes: ['id', 'name', 'email']}
+						{ model: User, as: 'assignee', attributes: ['id', 'name', 'email'] }
 					]
 				}
 			]
 		});
 
 		if (!project) {
-			return res.status(404).send({message: 'Project not found.'});
+			return res.status(404).send({ message: 'Project not found.' });
 		}
 
 		// Tạo CSV data
@@ -523,25 +524,215 @@ exports.exportWorkloadReport = async (req, res) => {
 
 	} catch (error) {
 		console.error('Error exporting workload report:', error);
-		res.status(500).send({message: error.message || 'Error exporting report.'});
+		res.status(500).send({ message: error.message || 'Error exporting report.' });
 	}
 };
-	// 👇 HÀM MỚI: Lấy thống kê chi tiết của 1 dự án để xuất báo cáo
+
+// =========================================================
+// NEW FEATURE 1: CALCULATE & UPDATE END DATE
+// =========================================================
+
+exports.updateProjectEndDate = async (req, res) => {
+	const { projectId } = req.params;
+
+	if (!projectId || isNaN(projectId)) {
+		return res.status(400).send({ message: "Invalid Project ID." });
+	}
+
+	try {
+		const maxDueDateResult = await Task.findOne({
+			where: { projectId, dueDate: { [Op.not]: null } },
+			attributes: [[db.sequelize.fn('MAX', db.sequelize.col('dueDate')), 'maxDueDate']],
+			raw: true
+		});
+
+		const newEndDate = maxDueDateResult?.maxDueDate;
+
+		if (!newEndDate) {
+			return res.status(200).send({
+				message: "No tasks with due date were found. Unable to calculate End Date."
+			});
+		}
+
+		const [updatedRows] = await Project.update({ endDate: newEndDate }, { where: { id: projectId } });
+
+		if (updatedRows === 0) {
+			return res.status(404).send({ message: "Project not found." });
+		}
+
+		res.status(200).send({
+			message: `Project End Date updated successfully. New End Date (based on the latest task due date): ${newEndDate}`,
+			newEndDate
+		});
+
+	} catch (error) {
+		console.error("Error updating project end date:", error);
+		res.status(500).send({ message: "Server error while calculating and updating End Date." });
+	}
+};
+
+// =========================================================
+// NEW FEATURE 2: IMPORT FULL PROJECT (Statuses, Tasks, Members)
+// =========================================================
+
+exports.importFullProject = async (req, res) => {
+	const projectData = req.body;
+	const currentUserId = req.userId;
+
+	if (!projectData || !projectData.name || !projectData.tasks) {
+		return res.status(400).send({ message: "Invalid Import Project data. Must include name and task list." });
+	}
+
+	const oldStatuses = projectData.statuses || [];
+	const oldTasks = projectData.tasks || [];
+	const oldMembers = projectData.members || [];
+
+	const t = await db.sequelize.transaction();
+
+	try {
+		const newProject = await Project.create({
+			name: `Imported - ${projectData.name}`,
+			description: projectData.description,
+			leaderId: projectData.leaderId || currentUserId,
+			startDate: projectData.startDate,
+			endDate: projectData.endDate,
+			workloadFactor: projectData.workloadFactor || 1,
+			progress: 0,
+		}, { transaction: t });
+
+		const newProjectId = newProject.id;
+
+		const statusesToCreate = oldStatuses.map(s => ({
+			name: s.name,
+			color: s.color,
+			position: s.position,
+			projectId: newProjectId
+		}));
+
+		const newStatuses = await Status.bulkCreate(statusesToCreate, { transaction: t, returning: true });
+
+		const statusMap = new Map();
+		oldStatuses.forEach(oldS => {
+			const newS = newStatuses.find(s => s.name === oldS.name);
+			if (newS) statusMap.set(oldS.id, newS.id);
+		});
+
+		const memberEmails = oldMembers.map(m => m.email);
+		const existingUsers = await User.findAll({
+			where: { email: { [Op.in]: memberEmails } },
+			attributes: ['id', 'email', 'name'],
+			transaction: t
+		});
+
+		const userMap = new Map();
+		oldMembers.forEach(oldM => {
+			const existingUser = existingUsers.find(u => u.email === oldM.email);
+			if (existingUser) userMap.set(oldM.id, existingUser.id);
+		});
+
+		const newTeam = await Team.create({
+			name: `${newProject.name} Core Team`,
+			projectId: newProjectId,
+			leaderId: newProject.leaderId
+		}, { transaction: t });
+
+		const teamMembersToCreate = [];
+		const uniqueMemberIds = new Set();
+
+		if (!userMap.has(newProject.leaderId)) {
+			userMap.set(newProject.leaderId, newProject.leaderId);
+		}
+
+		userMap.forEach((newUserId, oldUserId) => {
+			if (uniqueMemberIds.has(newUserId)) return;
+
+			const oldMember = oldMembers.find(m => m.id === oldUserId);
+			const role = (newUserId === newProject.leaderId)
+				? 'subleader'
+				: (oldMember?.team_members?.role || 'member');
+
+			teamMembersToCreate.push({
+				teamId: newTeam.id,
+				userId: newUserId,
+				role: role
+			});
+
+			uniqueMemberIds.add(newUserId);
+		});
+
+		if (teamMembersToCreate.length > 0) {
+			await TeamMember.bulkCreate(teamMembersToCreate, { transaction: t });
+		}
+
+		const tasksToCreate = [];
+
+		const issueTypes = await IssueType.findAll({ attributes: ['id'], transaction: t });
+		const validIssueTypeIds = new Set(issueTypes.map(it => it.id));
+
+		oldTasks.forEach(oldT => {
+			const newAssigneeId = userMap.get(oldT.assigneeId);
+			const newReporterId = userMap.get(oldT.reporterId) || currentUserId;
+			const newStatusId = statusMap.get(oldT.statusId);
+			const newTypeId = validIssueTypeIds.has(oldT.typeId) ? oldT.typeId : 1;
+
+			if (newStatusId) {
+				tasksToCreate.push({
+					title: oldT.title,
+					description: oldT.description,
+					priority: oldT.priority,
+					workloadWeight: oldT.workloadWeight || 1,
+					requiredSkills: oldT.requiredSkills,
+					startDate: oldT.startDate,
+					dueDate: oldT.dueDate,
+					progress: 0,
+
+					projectId: newProjectId,
+					reporterId: newReporterId,
+					assigneeId: newAssigneeId || null,
+					statusId: newStatusId,
+					typeId: newTypeId,
+
+					dependencies: oldT.dependencies || null,
+				});
+			}
+		});
+
+		let createdTasksCount = 0;
+		if (tasksToCreate.length > 0) {
+			const createdTasks = await Task.bulkCreate(tasksToCreate, { transaction: t });
+			createdTasksCount = createdTasks.length;
+		}
+
+		await t.commit();
+
+		res.status(201).send({
+			message: `Project imported successfully: Imported - ${projectData.name}. ${createdTasksCount} tasks and ${newStatuses.length} statuses created.`,
+			newProjectId: newProject.id
+		});
+
+	} catch (error) {
+		await t.rollback();
+		console.error("Error importing full project:", error);
+		res.status(500).send({ message: `Server error while importing project: ${error.message}` });
+	}
+};
+
+// 👇 HÀM MỚI: Lấy thống kê chi tiết của 1 dự án để xuất báo cáo
 exports.getProjectStats = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const userId = req.userId; // Lấy từ middleware verifyToken
+	try {
+		const { id } = req.params;
+		const userId = req.userId; // Lấy từ middleware verifyToken
 
-        // 1. Lấy thông tin dự án
-        const project = await Project.findByPk(id);
-        if (!project) return res.status(404).send({ message: "Project not found" });
+		// 1. Lấy thông tin dự án
+		const project = await Project.findByPk(id);
+		if (!project) return res.status(404).send({ message: "Project not found" });
 
-        // 🛡️ SECURITY CHECK: Chỉ Leader mới được xem báo cáo này
-        // Nếu không phải leader -> Trả về 403
-        if (project.leaderId !== Number(userId)) {
-            console.log(`❌ Access Denied: User ${userId} is not leader of Project ${id}`);
-            return res.status(403).send({ message: "Access denied. Only project leader can view stats." });
-        }
+		// 🛡️ SECURITY CHECK: Chỉ Leader mới được xem báo cáo này
+		// Nếu không phải leader -> Trả về 403
+		if (project.leaderId !== Number(userId)) {
+			console.log(`❌ Access Denied: User ${userId} is not leader of Project ${id}`);
+			return res.status(403).send({ message: "Access denied. Only project leader can view stats." });
+		}
 
         // 2. Thống kê Task
         const tasks = await Task.findAll({ where: { projectId: id } });

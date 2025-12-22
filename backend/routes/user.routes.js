@@ -50,7 +50,9 @@ module.exports = function (app) {
         [authJwt.verifyToken],
         userController.getAssignmentRules
     );
+
     app.get("/api/users",
         [authJwt.verifyToken],
-        userController.getAllUsers);
+        userController.getAllUsers
+    );
 };

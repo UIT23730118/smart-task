@@ -154,6 +154,23 @@ exports.createTask = async (req, res) => {
         });
     }
 
+    if (req.body.predecessorId) {
+      const predecessor = await Task.findByPk(req.body.predecessorId);
+
+      if (predecessor) {
+        // Lấy ngày bắt đầu dự kiến của Task mới (hoặc lấy ngày hiện tại nếu không nhập)
+        const myStartDate = startDate ? new Date(startDate) : new Date();
+        const parentEndDate = predecessor.dueDate ? new Date(predecessor.dueDate) : null;
+
+        // Nếu Task cha có hạn chót, và Task con lại định bắt đầu trước đó -> BÁO LỖI
+        if (parentEndDate && myStartDate < parentEndDate) {
+          return res.status(400).send({
+            message: `Logic Error: Start Date (${myStartDate.toLocaleDateString()}) cannot be earlier than Predecessor's Due Date (${parentEndDate.toLocaleDateString()}).`
+          });
+        }
+      }
+    }
+
     // 3. Tạo task
     const task = await Task.create({
       title,
@@ -171,6 +188,17 @@ exports.createTask = async (req, res) => {
       subtasksTemplate: subtasksTemplate || [],
       workloadWeight: Number(workloadWeight) || 1,
     });
+
+    if (req.body.predecessorId) {
+
+      // Lưu vào bảng task_dependencies
+      await db.taskDependencies.create({
+        predecessorId: req.body.predecessorId,
+        successorId: task.id,
+        type: 'FS'
+      });
+      console.log(`🔗 Created Link: ${req.body.predecessorId} -> ${task.id}`);
+    }
 
     // 5. Tạo Thông báo (Notifications)
     const project = await Project.findByPk(projectId);
@@ -218,6 +246,13 @@ exports.getTaskDetails = async (req, res) => {
         { model: Status, as: "status", attributes: ["id", "name", "color"] },
         { model: IssueType, as: "type", attributes: ["id", "name"] },
         { model: Resolution, attributes: ["id", "name"] },
+
+        {
+             model: Task,
+             as: 'Predecessors',
+             attributes: ['id', 'title'],
+             through: { attributes: [] }
+        },
         // Lấy Comments và thông tin người comment
         {
           model: Comment,
@@ -254,17 +289,44 @@ exports.updateTask = async (req, res) => {
     const task = await Task.findByPk(taskId);
 
     if (!task) return res.status(404).send({ message: "Task not found." });
+
+    // A. Xác định Task Cha (Là cái mới gửi lên, HOẶC là cái đang có trong DB)
+    let checkPredecessorId = null;
+    if (req.body.predecessorId !== undefined) {
+       // Nếu user có gửi lên (bao gồm cả gửi null để xóa)
+       checkPredecessorId = req.body.predecessorId;
+    } else {
+       // Nếu user không đả động gì đến link, tìm link cũ trong DB
+       const link = await db.taskDependencies.findOne({ where: { successorId: taskId } });
+       if (link) checkPredecessorId = link.predecessorId;
+    }
+
+    // B. Xác định Ngày Bắt Đầu (Là ngày mới gửi lên, HOẶC ngày cũ đang lưu)
+    const checkStartDate = req.body.startDate ? new Date(req.body.startDate) : new Date(task.startDate);
+
+    // C. Tiến hành kiểm tra logic ngày tháng (Chỉ check nếu có Task Cha)
+    if (checkPredecessorId) {
+       const predecessor = await Task.findByPk(checkPredecessorId);
+       if (predecessor && predecessor.dueDate) {
+          const parentEndDate = new Date(predecessor.dueDate);
+
+          if (checkStartDate < parentEndDate) {
+             return res.status(400).send({
+                message: `Logic Error: Start Date cannot be earlier than Predecessor's Due Date (${parentEndDate.toLocaleDateString()}).`
+             });
+          }
+       }
+    }
+
     const oldAssigneeId = task.assigneeId;
 
+    // Xử lý skills (fix lỗi chuỗi kép)
     let skillsToSave = req.body.requiredSkills;
-
     if (typeof skillsToSave === 'string') {
-      // 💡 FIX CỐT LÕI: Kiểm tra và loại bỏ dấu nháy kép ở hai đầu (Lỗi stringify kép)
       if (skillsToSave.startsWith('"') && skillsToSave.endsWith('"')) {
         skillsToSave = skillsToSave.substring(1, skillsToSave.length - 1);
       }
     } else {
-      // Nếu không phải chuỗi (null/undefined), giữ nguyên
       skillsToSave = skillsToSave || null;
     }
 
@@ -282,22 +344,106 @@ exports.updateTask = async (req, res) => {
       workloadWeight: req.body.workloadWeight,
     };
 
-    // Xóa các field undefined/null (Không gửi lên body)
+    // Xóa các field undefined (không gửi lên thì không update)
     Object.keys(updatedData).forEach((key) => {
-      // Chỉ xóa nếu giá trị là UNDEFINED. Giữ lại NULL hoặc chuỗi rỗng ("") nếu Frontend gửi.
       if (updatedData[key] === undefined) {
         delete updatedData[key];
       }
     });
 
+    // ============================================================
+    // FIX LOGIC TỰ ĐỘNG CHUYỂN TRẠNG THÁI (SMART AUTO-DONE)
+    // ============================================================
+
+    // TRƯỜNG HỢP 1: Nếu người dùng update Progress = 100%
+    if (req.body.progress !== undefined && parseInt(req.body.progress) === 100) {
+
+        // Bước 1: Ưu tiên tìm Status có tên là "Done", "Completed", "Finish"...
+        // (Tìm cả trong Project lẫn Global Status)
+        let doneStatus = await Status.findOne({
+            where: {
+                [Op.or]: [
+                    { projectId: task.projectId },
+                    { projectId: null }
+                ],
+                name: { [Op.in]: ['Done', 'DONE', 'Completed', 'Finish', 'Hoàn thành'] }
+            }
+        });
+
+        // Bước 2: Nếu không tìm thấy theo tên, mới dùng cách cũ (Lấy cột cuối cùng)
+        // NHƯNG loại trừ cột "Blocker" ra để tránh nhầm lẫn
+        if (!doneStatus) {
+             doneStatus = await Status.findOne({
+                where: {
+                    [Op.or]: [
+                        { projectId: task.projectId },
+                        { projectId: null }
+                    ],
+                    name: { [Op.ne]: 'Blocker' } // <--- QUAN TRỌNG: Né cột Blocker
+                },
+                order: [['position', 'DESC']]
+            });
+        }
+
+        if (doneStatus) {
+            updatedData.statusId = doneStatus.id;
+        }
+    }
+
+    // TRƯỜNG HỢP 2: Nếu người dùng kéo thả sang cột status mới -> Check xem có phải cột cuối không
+    if (req.body.statusId) {
+        const targetStatus = await Status.findByPk(req.body.statusId);
+
+        // Tìm status lớn nhất của dự án này để so sánh (Cũng phải né Blocker ra cho chắc)
+        const maxStatus = await Status.findOne({
+            where: {
+                [Op.or]: [
+                    { projectId: task.projectId },
+                    { projectId: null }
+                ],
+                name: { [Op.ne]: 'Blocker' }
+            },
+            order: [['position', 'DESC']]
+        });
+
+        // Nếu chuyển sang trạng thái cuối cùng -> Set luôn 100%
+        if (targetStatus && maxStatus && targetStatus.id === maxStatus.id) {
+             updatedData.progress = 100;
+        }
+    }
+    // ============================================================
+
+    // Thực hiện update vào Database
     await task.update(updatedData);
+
+    // Xử lý update Link (Dependencies)
+    if (req.body.predecessorId !== undefined) {
+      const predecessorId = req.body.predecessorId;
+
+      await db.taskDependencies.destroy({
+        where: { successorId: taskId }
+      });
+
+      if (predecessorId) {
+        await db.taskDependencies.create({
+          predecessorId: predecessorId,
+          successorId: taskId,
+          type: 'FS'
+        });
+        console.log(`🔗 Updated Link: ${predecessorId} -> ${taskId}`);
+      } else {
+        console.log(`🔗 Removed Link for Task ${taskId}`);
+      }
+    }
+
+    // Tính lại tiến độ dự án
     if (task.projectId) {
       console.log(`>>> [DEBUG] Đang tính lại tiến độ cho Project #${task.projectId}...`);
       await updateProjectProgress(task.projectId);
     }
     const newAssigneeId = task.assigneeId;
 
-    // 2. LOGIC THÔNG BÁO UPDATE
+    // --- LOGIC THÔNG BÁO (NOTIFICATION) ---
     const project = await Project.findByPk(task.projectId);
     const leaderId = project ? project.leaderId : null;
     const taskTitle = task.title;
@@ -349,6 +495,7 @@ exports.updateTask = async (req, res) => {
 
     res.status(200).send(task);
   } catch (error) {
+    console.error(error);
     res.status(500).send({ message: `Error updating task: ${error.message}` });
   }
 };
@@ -434,6 +581,13 @@ exports.deleteTask = async (req, res) => {
       });
     }
     await updateProjectProgress(task.projectId);
+    const count = await Task.count();
+
+    if (count === 0) {
+      // Nếu không còn task nào -> Reset bộ đếm ID về 1 (Chỉ áp dụng cho MySQL)
+      await db.sequelize.query("ALTER TABLE tasks AUTO_INCREMENT = 1");
+      console.log("♻️ Database Empty: Auto-increment has been reset to 1.");
+    }
 
     // -----------------------------
 
@@ -647,7 +801,13 @@ exports.findAll = async (req, res) => {
       include: [
         { model: User, as: "assignee", attributes: ["id", "name"] },
         { model: Status, as: "status", attributes: ["id", "name", "color"] },
-        { model: IssueType, as: "type", attributes: ["id", "name"] }
+        { model: IssueType, as: "type", attributes: ["id", "name"] },
+        {
+             model: Task,
+             as: 'Predecessors',
+             attributes: ['id'], // Chỉ cần ID để vẽ line
+             through: { attributes: [] }
+        },
       ],
       order: [['createdAt', 'DESC']]
     });

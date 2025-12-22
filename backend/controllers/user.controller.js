@@ -162,6 +162,7 @@ exports.getAllUsers = async (req, res) => {
     res.status(500).send({ message: error.message });
   }
 };
+
 // --- Bạn có thể thêm các hàm khác như getProfile, updateProfile ở đây ---
 // exports.getUserProfile = ...
 // exports.updateUserProfile = ...

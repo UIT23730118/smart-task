@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   Modal, Form, Input, Select, DatePicker, Slider,
   Button, Row, Col, Avatar, List, message, Tag, Divider,
-  Tabs, Upload, Popconfirm, InputNumber, Checkbox, Typography
+  Tabs, Upload, Popconfirm, InputNumber, Checkbox
 } from "antd";
 import {
   UserOutlined, SendOutlined,
@@ -10,7 +10,7 @@ import {
   InboxOutlined, FileTextOutlined,
   DeleteOutlined, DownloadOutlined,
   RobotOutlined, CheckOutlined, PlusOutlined, UnorderedListOutlined,
-  MinusCircleOutlined
+  MinusCircleOutlined, LinkOutlined
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 
@@ -30,6 +30,7 @@ const TaskModal = ({
   projectId,
   members = [],
   statuses = [],
+  tasks = [],
   onClose,
   onTaskChanged,
   onTaskRefreshed,
@@ -79,6 +80,10 @@ const TaskModal = ({
       TaskService.getTaskDetails(taskId)
         .then((res) => {
           const t = res.data;
+
+          if (t.Predecessors && t.Predecessors.length > 0) {
+          t.predecessorId = t.Predecessors[0].id;
+      }
 
           let assignedId = t.assigneeId;
           if (assignedId !== null && assignedId !== undefined) {
@@ -138,6 +143,7 @@ const TaskModal = ({
             subtasks: parsedSubtasks,
             requiredSkills: requiredSkillsArray, // PHẢI LÀ MẢNG
             workloadWeight: t.workloadWeight || 1,
+            predecessorId: t.predecessorId,
           });
 
           // Cập nhật state phụ
@@ -212,6 +218,7 @@ const TaskModal = ({
         startDate,
         dueDate,
         assigneeId,
+        predecessorId,
         ...rest // Lấy tất cả các trường còn lại (title, description, priority, progress, statusId...)
       } = values;
 
@@ -230,6 +237,7 @@ const TaskModal = ({
 
         // Gán giá trị mặc định cho suggestedAssigneeId
         suggestedAssigneeId: undefined,
+        predecessorId: predecessorId || null,
       };
 
       if (isEditMode) await TaskService.updateTask(taskId, payload);
@@ -550,6 +558,34 @@ const TaskModal = ({
           <Form.Item label="Status" name="statusId">
             <Select placeholder="Select status">
               {statuses?.map((s) => (<Option key={s.id} value={s.id}>{s.name}</Option>))}
+            </Select>
+          </Form.Item>
+
+          <Form.Item
+            label={
+              <span>
+                <LinkOutlined /> Task Dependency (Predecessor)
+              </span>
+            }
+            name="predecessorId"
+            tooltip="Select the task that must be completed before this task can start."
+          >
+            <Select
+              placeholder="Select predecessor task..."
+              allowClear
+              showSearch
+              optionFilterProp="children"
+              filterOption={(input, option) =>
+                (option?.children ? String(option.children) : '').toLowerCase().includes(input.toLowerCase())
+              }
+            >
+              {tasks && tasks
+                .filter(t => t.id !== taskId) // Không cho chọn chính nó
+                .map((t) => (
+                  <Option key={t.id} value={t.id}>
+                     #{t.id} - {t.title}
+                  </Option>
+              ))}
             </Select>
           </Form.Item>
 

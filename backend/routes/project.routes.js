@@ -59,4 +59,30 @@ module.exports = function (app) {
         [authJwt.verifyToken],
         controller.getProjectStats
     );
+
+    // =========================================================
+    // CHỨC NĂNG MỚI
+    // =========================================================
+
+    // 1. Tính và Cập nhật ngày kết thúc Project (Dựa trên Due Date)
+    // Thường chỉ Leader mới có quyền tính toán lại tiến độ/deadline
+    app.post(
+        '/api/projects/:projectId/calculate-end-date',
+        [authJwt.verifyToken, authJwt.isLeader], // Nên check quyền Leader Project
+        controller.updateProjectEndDate
+    );
+
+    // 2. Import Project đầy đủ từ JSON (Chỉ cho phép Global Leader)
+    app.post(
+        '/api/projects/import-full',
+        [authJwt.verifyToken, authJwt.isLeader],
+        controller.importFullProject
+    );
+
+    // 3. Export Workload Report (Nếu bạn đã thêm hàm này vào controller)
+    // app.get(
+    //     "/api/projects/:id/export/workload",
+    //     [authJwt.verifyToken],
+    //     controller.exportWorkloadReport
+    // );
 };

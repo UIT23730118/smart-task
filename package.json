@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "gantt-task-react": "^0.3.9",
     "jspdf": "^3.0.4",
     "jspdf-autotable": "^5.0.2",
     "react-google-charts": "^5.2.1"
