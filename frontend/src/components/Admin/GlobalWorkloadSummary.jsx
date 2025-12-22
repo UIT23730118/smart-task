@@ -148,13 +148,23 @@ const GlobalWorkloadSummary = () => {
                 size="middle"
                 expandable={{
                     expandedRowRender: (record) => {
-                        if (!record.currentTasks || record.currentTasks.length === 0) {
-                            return <i>No active tasks</i>;
+                        if (
+                            (!record.currentTasks || record.currentTasks.length === 0) &&
+                            (!record.completedTasks || record.completedTasks.length === 0)
+                        ) {
+                            return <i>No tasks</i>;
                         }
-                        return <UserTaskTable tasks={record.currentTasks} />;
+
+                        return (
+                            <UserTaskTable
+                                currentTasks={record.currentTasks}
+                                completedTasks={record.completedTasks}
+                            />
+                        );
                     },
                     rowExpandable: (record) =>
-                        record.currentTasks && record.currentTasks.length > 0
+                        (record.currentTasks?.length || 0) +
+                        (record.completedTasks?.length || 0) > 0
                 }}
             />
         </div>

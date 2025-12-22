@@ -1743,3 +1743,6 @@ textarea.form-control {
   color: var(--primary-color);
   font-weight: 500;
 }
+.overdue-row {
+    background-color: #fff1f0 !important;
+}
