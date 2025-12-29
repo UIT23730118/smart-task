@@ -5,10 +5,28 @@ import React from "react";
 import { FaBug, FaCheckSquare, FaBookmark, FaBolt } from "react-icons/fa";
 // Import các component Ant Design cần thiết
 import { Table, Tag, Avatar, Tooltip } from "antd";
-import { UserOutlined, ClockCircleOutlined, WarningOutlined  } from '@ant-design/icons';
+import { UserOutlined, ClockCircleOutlined, WarningOutlined } from '@ant-design/icons';
+import { useState, useEffect } from 'react';
 
+const useSystemDarkMode = () => {
+  const [isDark, setIsDark] = useState(
+    window.matchMedia('(prefers-color-scheme: dark)').matches
+  );
+
+  useEffect(() => {
+    const matcher = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = (e) => setIsDark(e.matches);
+
+    matcher.addEventListener('change', onChange);
+    return () => matcher.removeEventListener('change', onChange);
+  }, []);
+
+  return isDark;
+};
 
 const TaskListView = ({ tasks, onTaskClick, statuses }) => {
+
+  const isDarkMode = useSystemDarkMode();
 
   // Helper chọn icon theo Type (GIỮ NGUYÊN)
   const getTypeIcon = (typeId) => {
@@ -26,18 +44,16 @@ const TaskListView = ({ tasks, onTaskClick, statuses }) => {
   };
 
   // Helper màu Priority (GIỮ NGUYÊN)
-  const getPriorityColor = (p) => {
-    switch (p) {
-      case "Critical":
-        return "red";
-      case "Major":
-      case "High":
-        return "orange";
-      case "Medium":
-        return "gold";
-      default:
-        return "default"; // Minor/Low
-    }
+  const getPriorityColor = (p, isDarkMode) => {
+    const colors = {
+      Critical: isDarkMode ? "#FF5252" : "#D32F2F",
+      Major: isDarkMode ? "#FF9800" : "#E65100",
+      High: isDarkMode ? "#FF9800" : "#E65100",
+      Medium: isDarkMode ? "#FFD740" : "#A18800",
+      Default: isDarkMode ? "#90A4AE" : "#546E7A",
+    };
+
+    return colors[p] || colors.Default;
   };
 
   // 💡 CẬP NHẬT: Helper màu Status tag
@@ -62,14 +78,23 @@ const TaskListView = ({ tasks, onTaskClick, statuses }) => {
     }
 
     // Trạng thái khác (warning: Vàng)
-    return "warning";
+    return "default";
   };
 
   // Helper màu cho Slack (Độ trễ)
-  const getSlackColor = (slack) => {
-    if (slack === 0 || slack === undefined) return "red"; // Critical
-    if (slack <= 2) return "orange"; // Nguy hiểm
-    return "green"; // An toàn
+  const getSlackColor = (slack, isDarkMode) => {
+    // Ưu tiên xử lý trường hợp Critical (Đường găng)
+    if (slack === 0 || slack === undefined) {
+      return isDarkMode ? "#ff4d4f" : "#cf1322"; // Đỏ tươi : Đỏ đậm
+    }
+
+    // Trường hợp nguy hiểm (Slack thấp)
+    if (slack <= 2) {
+      return isDarkMode ? "#ffa940" : "#d46b08"; // Cam sáng : Cam cháy
+    }
+
+    // Trường hợp an toàn
+    return isDarkMode ? "#73d13d" : "#389e0d"; // Xanh lá sáng : Xanh lá đậm
   };
 
 
@@ -134,16 +159,27 @@ const TaskListView = ({ tasks, onTaskClick, statuses }) => {
       title: 'CPM (Days)',
       key: 'cpm',
       width: 160,
-      render: (_, record) => (
-        <div style={{ fontSize: '11px', lineHeight: '1.4', fontFamily: 'monospace' }}>
-          <div style={{ color: '#1890ff' }}>
-            ES:{record.es ?? '?'} ➝ EF:{record.ef ?? '?'}
+      render: (_, record) => {
+        // Tự động tính toán mã màu dựa trên mode của máy tính
+        const colorES = isDarkMode ? '#4fd1c5' : '#007291'; // Cyan sáng vs Teal đậm
+        const colorLS = isDarkMode ? '#ffb000' : '#b93a00'; // Amber sáng vs Cam cháy
+
+        return (
+          <div style={{
+            fontSize: '11px',
+            lineHeight: '1.5',
+            fontFamily: 'monospace',
+            fontWeight: '700' // Tăng lên 700 để chữ cực kỳ rõ nét
+          }}>
+            <div style={{ color: colorES }}>
+              ES:{record.es ?? '?'} ➝ EF:{record.ef ?? '?'}
+            </div>
+            <div style={{ color: colorLS }}>
+              LS:{record.ls ?? '?'} ➝ LF:{record.lf ?? '?'}
+            </div>
           </div>
-          <div style={{ color: '#722ed1' }}>
-            LS:{record.ls ?? '?'} ➝ LF:{record.lf ?? '?'}
-          </div>
-        </div>
-      )
+        );
+      }
     },
     // 🔥 CỘT MỚI: SLACK (Độ trễ cho phép)
     {
@@ -153,7 +189,7 @@ const TaskListView = ({ tasks, onTaskClick, statuses }) => {
       width: 90,
       align: 'center',
       render: (slack, record) => (
-        <Tag color={getSlackColor(record.isCritical ? 0 : slack)}>
+        <Tag color={getSlackColor((record.isCritical ? 0 : slack), isDarkMode)}>
           {record.isCritical ? "CRITICAL" : `${slack}d`}
         </Tag>
       )
@@ -174,7 +210,7 @@ const TaskListView = ({ tasks, onTaskClick, statuses }) => {
       dataIndex: 'priority',
       key: 'priority',
       width: 90,
-      render: (priority) => <Tag color={getPriorityColor(priority)}>{priority}</Tag>,
+      render: (priority) => <Tag color={getPriorityColor(priority, isDarkMode)}>{priority}</Tag>,
     },
     {
       title: 'Required Skills',

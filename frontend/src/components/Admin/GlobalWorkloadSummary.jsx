@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Table, Tag, Progress, Alert } from 'antd';
 import UserService from '../../api/user.service';
+import UserTaskTable from './UserTaskTable';
 
 const GlobalWorkloadSummary = () => {
     const [summaryData, setSummaryData] = useState([]);
@@ -11,10 +12,10 @@ const GlobalWorkloadSummary = () => {
         const fetchData = async () => {
             setLoading(true);
             setError(null);
-            
+
             try {
                 const response = await UserService.getGlobalWorkloadSummary();
-                setSummaryData(response.data); 
+                setSummaryData(response.data);
             } catch (err) {
                 console.error("Failed to fetch global workload summary:", err);
                 const errorMessage = err.response?.data?.message || err.message;
@@ -129,7 +130,7 @@ const GlobalWorkloadSummary = () => {
                     style={{ marginBottom: 16 }}
                 />
             )}
-            
+
             <Alert
                 // 💡 Cập nhật mô tả công thức
                 message="KPI Metrics: (Task Weight × Project Factor × Time Urgency Factor) / User Score. Time Urgency dramatically increases Workload points for tasks with near deadlines."
@@ -137,7 +138,7 @@ const GlobalWorkloadSummary = () => {
                 showIcon
                 style={{ marginBottom: 16 }}
             />
-            
+
             <Table
                 columns={columns}
                 dataSource={summaryData}
@@ -145,6 +146,26 @@ const GlobalWorkloadSummary = () => {
                 pagination={false}
                 scroll={{ x: 1000 }}
                 size="middle"
+                expandable={{
+                    expandedRowRender: (record) => {
+                        if (
+                            (!record.currentTasks || record.currentTasks.length === 0) &&
+                            (!record.completedTasks || record.completedTasks.length === 0)
+                        ) {
+                            return <i>No tasks</i>;
+                        }
+
+                        return (
+                            <UserTaskTable
+                                currentTasks={record.currentTasks}
+                                completedTasks={record.completedTasks}
+                            />
+                        );
+                    },
+                    rowExpandable: (record) =>
+                        (record.currentTasks?.length || 0) +
+                        (record.completedTasks?.length || 0) > 0
+                }}
             />
         </div>
     );

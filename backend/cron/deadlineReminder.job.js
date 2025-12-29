@@ -6,7 +6,7 @@ const db = require("../models");
 const Task = db.tasks;
 const Notification = db.notifications;
 
-const REMIND_DAYS = [3, 1]; // 🔥 Remind 3 days & 1 day before deadline
+const REMIND_DAYS = [3, 2, 1]; // 🔥 Remind 3 days & 1 day before deadline
 
 cron.schedule("*/1 * * * *", async () => {
   console.log("⏰ Running deadline reminder job...");
