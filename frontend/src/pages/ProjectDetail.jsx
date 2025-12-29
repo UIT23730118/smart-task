@@ -151,13 +151,16 @@ const ProjectDetail = () => {
     try {
       message.loading({ content: "Đang tải dữ liệu...", key: "export" });
 
+      // Gọi API mới (đã sửa ở backend để trả về ngày kết thúc tính toán)
       const res = await api.get(`/projects/${projectId}/stats?_t=${Date.now()}`, {
         headers: authHeader()
       });
 
-      const { stats, workload } = res.data;
+      // Lấy dữ liệu: stats, workload VÀ thông tin project (để lấy ngày)
+      const { stats, workload, project: projectInfo } = res.data;
+
       const allTasks = projectData?.tasks || [];
-      const projectName = projectData?.name || "Project Report";
+      const projectName = projectInfo?.name || projectData?.name || "Project Report";
 
       if (!stats || !workload) {
         message.error("Không có dữ liệu!");
@@ -178,13 +181,22 @@ const ProjectDetail = () => {
       doc.setTextColor(100);
       doc.setFont("helvetica", "normal");
 
-      const startDate = projectData.startDate ? new Date(projectData.startDate).toLocaleDateString('en-GB') : 'N/A';
-      const dueDate = projectData.dueDate ? new Date(projectData.dueDate).toLocaleDateString('en-GB') : 'N/A';
+      // --- SỬA LẠI LOGIC NGÀY THÁNG (FIX N/A) ---
+      const formatDate = (d) => d ? new Date(d).toLocaleDateString('en-GB') : 'N/A';
+
+      // Lấy ngày Start/End từ response API mới nhất
+      const startDateStr = formatDate(projectInfo?.startDate || projectData.startDate);
+
+      // Quan trọng: projectInfo.endDate là ngày backend đã tự tính (Max Task Date)
+      const endDateStr = formatDate(projectInfo?.endDate);
+
       const factor = projectData.workloadFactor ? projectData.workloadFactor.toFixed(1) : '1.0';
 
       doc.text(`Exported: ${new Date().toLocaleString()}`, 14, 26);
       doc.setTextColor(0);
-      doc.text(`Timeline: ${startDate} - ${dueDate}`, 14, 32);
+      // Hiển thị Timeline chuẩn
+      doc.text(`Timeline: ${startDateStr} - ${endDateStr}`, 14, 32);
+
       doc.text(`Workload Factor:`, 120, 32);
       doc.setTextColor(255, 0, 0);
       doc.setFont("helvetica", "bold");
@@ -213,7 +225,7 @@ const ProjectDetail = () => {
       drawKPI(startX + (kpiWidth + gap) * 2, "IN PROGRESS", stats.inProgress, [52, 152, 219]);
       drawKPI(startX + (kpiWidth + gap) * 3, "LATE", stats.late, [231, 76, 60]);
 
-      // --- 3. MEMBER TABLE (DEEP SCAN FIX) ---
+      // --- 3. MEMBER TABLE ---
       yPos += 35;
       doc.setFontSize(14);
       doc.setTextColor(0);
@@ -221,17 +233,12 @@ const ProjectDetail = () => {
       doc.text("Member Workload & Tasks", 14, yPos);
 
       const tableBody = workload.map(u => {
-        // [FIX] Tìm ID người dùng mọi nơi có thể
         const targetId = String(u.id || u.userId || "");
 
         const userTasks = allTasks.filter(t => {
-           // Check 1: assigneeId trực tiếp
            if (t.assigneeId && String(t.assigneeId) === targetId) return true;
-           // Check 2: assignee là object (ví dụ task.assignee.id)
            if (t.assignee && t.assignee.id && String(t.assignee.id) === targetId) return true;
-           // Check 3: Fallback tìm theo tên (nếu ID bị null)
            if (t.assignee && t.assignee.name === u.name) return true;
-
            return false;
         });
 
@@ -248,7 +255,7 @@ const ProjectDetail = () => {
           u.role === 'subleader' ? 'Sub-Leader' : 'Member',
           u.totalTasks,
           taskListString,
-          `${u.totalTasks > 0 ? ((u.completedTasks / u.totalTasks) * 100).toFixed(0) : 0}%`
+          u.rate || '0%' // Dùng rate backend trả về hoặc tính tay
         ];
       });
 
@@ -262,7 +269,7 @@ const ProjectDetail = () => {
             0: { cellWidth: 25 },
             1: { cellWidth: 20 },
             2: { cellWidth: 10, halign: 'center' },
-            3: { cellWidth: 'auto' }, // Cột task tự giãn
+            3: { cellWidth: 'auto' },
             4: { cellWidth: 15, halign: 'center' }
         },
         styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak' },
@@ -277,9 +284,9 @@ const ProjectDetail = () => {
       doc.setFont("helvetica", "bold");
       doc.text("Project Timeline Snapshot", 14, finalY);
 
-      finalY += 15; // Tăng khoảng cách header
+      finalY += 15;
 
-      // A. Tính toán thời gian
+      // A. Tính toán thời gian min/max cho biểu đồ
       let minTime = Infinity;
       let maxTime = -Infinity;
       const validTasks = allTasks.filter(t => {
@@ -301,7 +308,7 @@ const ProjectDetail = () => {
          minDate = new Date(minTime);
          maxDate = new Date(maxTime);
       }
-      // Nới rộng trục thời gian: Trừ 2 ngày đầu, Cộng 10 ngày cuối (để có chỗ ghi text)
+
       minDate.setDate(minDate.getDate() - 2);
       maxDate.setDate(maxDate.getDate() + 10);
 
@@ -309,36 +316,33 @@ const ProjectDetail = () => {
       const chartWidth = 170;
       const chartStartX = 20;
       const pxPerMs = totalDuration > 0 ? (chartWidth / totalDuration) : 0;
-      const chartHeight = Math.min(validTasks.length, 15) * 12 + 20; // Tăng chiều cao mỗi dòng
+      const chartHeight = Math.min(validTasks.length, 15) * 12 + 20;
 
-      // B. VẼ TRỤC NGÀY & LƯỚI DỌC (GRIDLINES) - Quan trọng để dễ nhìn
+      // B. VẼ TRỤC NGÀY & LƯỚI DỌC
       const numTicks = 6;
       doc.setFontSize(8);
       doc.setTextColor(150);
-      doc.setDrawColor(220); // Màu xám nhạt cho lưới
+      doc.setDrawColor(220);
 
-      // Vẽ khung bao
       const xAxisY = finalY + chartHeight;
-      doc.line(chartStartX, finalY, chartStartX, xAxisY); // Trục Y
+      doc.line(chartStartX, finalY, chartStartX, xAxisY);
 
       for (let i = 0; i <= numTicks; i++) {
         const percent = i / numTicks;
         const tickX = chartStartX + (chartWidth * percent);
 
-        // Vẽ lưới dọc đứt đoạn (Gridline)
-        doc.setLineDash([1, 1], 0); // Nét đứt
+        doc.setLineDash([1, 1], 0);
         doc.line(tickX, finalY, tickX, xAxisY);
-        doc.setLineDash([]); // Reset về nét liền
+        doc.setLineDash([]);
 
-        // Ghi ngày dưới chân
         const tickDateMs = minDate.getTime() + (totalDuration * percent);
         const d = new Date(tickDateMs);
         const dateStr = `${d.getDate()}/${d.getMonth() + 1}`;
         doc.text(dateStr, tickX, xAxisY + 5, { align: 'center' });
       }
-      doc.line(chartStartX, xAxisY, chartStartX + chartWidth, xAxisY); // Trục X đáy
+      doc.line(chartStartX, xAxisY, chartStartX + chartWidth, xAxisY);
 
-      // C. VẼ TASK BARS + TEXT NGÀY THÁNG
+      // C. VẼ TASK BARS
       const tasksToDraw = validTasks.slice(0, 15);
 
       tasksToDraw.forEach((task, index) => {
@@ -347,58 +351,42 @@ const ProjectDetail = () => {
         const tStart = new Date(task.startDate);
         let tEnd = new Date(task.dueDate);
 
-        // [FIX TASK 5] Nếu ngày Start >= End (Task 1 ngày hoặc lỗi), tự cộng thêm 1 ngày để có độ rộng
         if (tStart.getTime() >= tEnd.getTime()) {
             tEnd = new Date(tStart);
-            tEnd.setDate(tEnd.getDate() + 1); // Cộng 1 ngày
+            tEnd.setDate(tEnd.getDate() + 1);
         }
 
-        // Tính toán vị trí Bar
         const barX = chartStartX + ((tStart.getTime() - minDate.getTime()) * pxPerMs);
         let barW = (tEnd.getTime() - tStart.getTime()) * pxPerMs;
 
-        // Clip bar nếu tràn khung trái
         let finalX = Math.max(chartStartX, barX);
-        let finalW = barW - (finalX - barX); // Trừ đi phần bị cắt bên trái
+        let finalW = barW - (finalX - barX);
 
-        // Clip bar nếu tràn khung phải
         if (finalX + finalW > chartStartX + chartWidth) {
             finalW = (chartStartX + chartWidth) - finalX;
         }
 
-        // [QUAN TRỌNG] Ép độ rộng tối thiểu 2px để luôn nhìn thấy (kể cả khi tỉ lệ quá nhỏ)
         if (finalW < 2 && finalX < chartStartX + chartWidth) finalW = 2;
 
-        // Chỉ vẽ nếu bar còn nằm trong khung
         if (finalW > 0 && finalX >= chartStartX) {
-
-            // Logic màu sắc
             const slacks = allTasks.filter(t => t.slack !== undefined).map(t => t.slack);
             const minSlack = slacks.length > 0 ? Math.min(...slacks) : 0;
             const currentSlack = (task.slack !== undefined) ? task.slack : 0;
             const isCritical = task.isCritical === true || currentSlack <= 0 || currentSlack === minSlack;
 
-            // Priority Color: Critical > Completed > Normal
-            if (isCritical) doc.setFillColor(255, 77, 79); // Đỏ
-            else if (Number(task.progress) === 100) doc.setFillColor(82, 196, 26); // Xanh lá
-            else doc.setFillColor(24, 144, 255); // Xanh dương
+            if (isCritical) doc.setFillColor(255, 77, 79);
+            else if (Number(task.progress) === 100) doc.setFillColor(82, 196, 26);
+            else doc.setFillColor(24, 144, 255);
 
-            // Vẽ Bar (Bo góc 1px)
             doc.roundedRect(finalX, rowY, finalW, 7, 1, 1, 'F');
 
-            // Ghi ngày tháng bên cạnh
             doc.setTextColor(80);
             doc.setFontSize(7);
-
-            // Format ngày hiển thị gốc (không cộng 1) để user không hiểu nhầm
             const originEnd = new Date(task.dueDate);
             const dateRangeText = `${tStart.getDate()}/${tStart.getMonth()+1} - ${originEnd.getDate()}/${originEnd.getMonth()+1}`;
-
-            // Vẽ text chệch ra sau thanh bar 2px
             doc.text(dateRangeText, finalX + finalW + 2, rowY + 5);
         }
 
-        // Tên task bên trái trục Y
         doc.setTextColor(0);
         doc.setFontSize(8);
         const tName = task.title.length > 18 ? task.title.substring(0, 18) + ".." : task.title;

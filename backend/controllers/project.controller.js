@@ -719,84 +719,95 @@ exports.importFullProject = async (req, res) => {
 
 // 👇 HÀM MỚI: Lấy thống kê chi tiết của 1 dự án để xuất báo cáo
 exports.getProjectStats = async (req, res) => {
-	try {
-		const { id } = req.params;
-		const userId = req.userId; // Lấy từ middleware verifyToken
+  try {
+    const { id } = req.params;
+    const userId = req.userId;
 
-		// 1. Lấy thông tin dự án
-		const project = await Project.findByPk(id);
-		if (!project) return res.status(404).send({ message: "Project not found" });
+    // 1. Lấy thông tin dự án
+    const project = await Project.findByPk(id);
+    if (!project) return res.status(404).send({ message: "Project not found" });
 
-		// 🛡️ SECURITY CHECK: Chỉ Leader mới được xem báo cáo này
-		// Nếu không phải leader -> Trả về 403
-		if (project.leaderId !== Number(userId)) {
-			console.log(`❌ Access Denied: User ${userId} is not leader of Project ${id}`);
-			return res.status(403).send({ message: "Access denied. Only project leader can view stats." });
-		}
+    // 🛡️ SECURITY CHECK
+    if (project.leaderId !== Number(userId)) {
+      return res.status(403).send({ message: "Access denied. Only project leader can view stats." });
+    }
 
-        // 2. Thống kê Task
-        const tasks = await Task.findAll({ where: { projectId: id } });
+    // 2. Thống kê Task & TÌM NGÀY KẾT THÚC (FIX LỖI N/A)
+    const tasks = await Task.findAll({ where: { projectId: id } });
 
-        const stats = {
-            total: tasks.length,
-            todo: tasks.filter(t => t.statusId && t.progress === 0).length, // Hoặc check theo status name nếu cấu hình
-            inProgress: tasks.filter(t => t.progress > 0 && t.progress < 100).length,
-            done: tasks.filter(t => t.progress === 100).length, // Cách check Done an toàn nhất
-            late: tasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && t.progress < 100).length
-        };
+    // --- LOGIC TÍNH NGÀY KẾT THÚC DỰ KIẾN ---
+    let finalEndDate = project.endDate; // Mặc định lấy từ Project
 
-        // 3. Thống kê Workload
-        const teams = await Team.findAll({
-            where: { projectId: id },
-            attributes: ['id']
-        });
-        const teamIds = teams.map(t => t.id);
+    // Nếu Project chưa set ngày kết thúc, ta tự tìm trong đám Task
+    if (!finalEndDate && tasks.length > 0) {
+         const allDueDates = tasks
+             .filter(t => t.dueDate) // Lấy các task có set deadline
+             .map(t => new Date(t.dueDate).getTime());
 
-        if (teamIds.length === 0) {
-             return res.status(200).send({ project: project.name, stats, workload: [] });
-        }
+         if (allDueDates.length > 0) {
+             // Lấy ngày xa nhất làm ngày kết thúc dự án
+             finalEndDate = new Date(Math.max(...allDueDates));
+         }
+    }
+    // ----------------------------------------
 
+    const stats = {
+        total: tasks.length,
+        todo: tasks.filter(t => t.statusId && t.progress === 0).length,
+        inProgress: tasks.filter(t => t.progress > 0 && t.progress < 100).length,
+        done: tasks.filter(t => t.progress === 100).length,
+        late: tasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && t.progress < 100).length
+    };
+
+    // 3. Thống kê Workload (Giữ nguyên logic cũ)
+    const teams = await Team.findAll({
+        where: { projectId: id },
+        attributes: ['id']
+    });
+    const teamIds = teams.map(t => t.id);
+
+    let workload = [];
+    if (teamIds.length > 0) {
         const memberStats = await TeamMember.findAll({
             where: { teamId: { [Op.in]: teamIds } },
-            include: [{
-                model: User,
-                attributes: ['id', 'name', 'email'] // Lấy thêm ID để so sánh chính xác
-            }]
+            include: [{ model: User, attributes: ['id', 'name', 'email'] }]
         });
 
-        const workload = [];
         const processedUserIds = new Set();
-
         for (const m of memberStats) {
-            // Check m.user tồn tại để tránh crash
             if (m.user && !processedUserIds.has(m.user.id)) {
-                // Đếm task được assign cho user này trong dự án
-                const userTaskCount = await Task.count({
-                    where: { projectId: id, assigneeId: m.user.id }
-                });
+                const userTaskCount = await Task.count({ where: { projectId: id, assigneeId: m.user.id } });
+                const userDoneCount = await Task.count({ where: { projectId: id, assigneeId: m.user.id, progress: 100 } });
 
-                // Đếm task đã xong (progress = 100 hoặc status DONE tùy db của bạn)
-                // Ở đây mình dùng progress 100 cho an toàn
-                const userDoneCount = await Task.count({
-                    where: { projectId: id, assigneeId: m.user.id, progress: 100 }
-                });
+                // Tính tỉ lệ hoàn thành
+                const rate = userTaskCount > 0 ? Math.round((userDoneCount / userTaskCount) * 100) : 0;
 
                 processedUserIds.add(m.user.id);
-
                 workload.push({
                     name: m.user.name,
                     email: m.user.email,
                     totalTasks: userTaskCount,
                     completedTasks: userDoneCount,
+                    rate: `${rate}%`, // Thêm % để hiển thị đẹp
                     role: m.role
                 });
             }
         }
-
-        res.status(200).send({ project: project.name, stats, workload });
-
-    } catch (error) {
-        console.error("STATS ERROR:", error);
-        res.status(500).send({ message: error.message });
     }
+
+    // 4. TRẢ VỀ KẾT QUẢ (Cập nhật cấu trúc để Frontend nhận được ngày tháng)
+    res.status(200).send({
+        project: {
+            name: project.name,
+            startDate: project.startDate, // Trả về Start Date
+            endDate: finalEndDate         // Trả về End Date (đã tính toán)
+        },
+        stats,
+        workload
+    });
+
+  } catch (error) {
+    console.error("STATS ERROR:", error);
+    res.status(500).send({ message: error.message });
+  }
 };
